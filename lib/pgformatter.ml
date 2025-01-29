@@ -29,7 +29,10 @@ let format_string sql =
   let sql = Str.global_replace (Str.regexp "( )") " __EMPTY_PAREN " sql in
   let parts = Str.split (Str.regexp " ") sql in
   let indent = ref 0 in
+  let parenlevel = ref (Stack.create ()) in
+  let where_clause = ref false in
   let raw_mode = ref false in
+  let values_mode = ref false in
   List.iteri parts ~f:(fun i word ->
     let ind () =
       if !indent < 0 then indent := 0;
@@ -41,12 +44,22 @@ let format_string sql =
       | "," -> printf ", "
       | "+" -> printf " + "
       | _ -> printf "%s" word
+    else if !values_mode then
+      let () = if (is_nth_equal parts (i + 1) ";") 
+        then values_mode := false in
+      match word with
+      | "," -> if (is_nth_equal parts (i - 1) ")") && (is_nth_equal parts (i + 1) "(")
+        then printf "\n%s    %s " (ind()) word
+        else printf "%s " word
+      | _ -> printf "%s" word
     else match String.uppercase (String.strip word) with
       | "SELECT" -> 
-        printf "\n%sSELECT\n" (ind());
-        indent := !indent + 1;
-        printf "%s" (ind())
+        printf "\n%sSELECT%s" (ind()) (if (is_nth_equal parts (i + 1) "(") then " " else "\n");
+        if not(is_nth_equal parts (i + 1) "(") then
+          let () = indent := !indent + 1 in
+          printf "%s" (ind());
       | "WHERE" -> 
+        where_clause := true;
         printf "\n%sWHERE\n    %s" (ind()) (ind());
         indent := !indent + 1;
       | "CREATE" -> printf "\n%sCREATE " (ind())
@@ -62,7 +75,8 @@ let format_string sql =
         indent := !indent - 1;
         printf "\n%sFROM " (ind());
       | "LOOP" ->
-        indent := !indent - 1;
+        indent := !indent - if !where_clause then 2 else 1;
+        where_clause := false;
         printf "\n%sLOOP\n" (ind());
         indent := !indent + 1;
         printf "%s" (ind())
@@ -70,7 +84,9 @@ let format_string sql =
         printf "\n%sDECLARE\n" (ind());
         indent := !indent + 1;
         printf "%s" (ind())
-      | "VALUES" -> printf " VALUES "
+      | "VALUES" ->
+        values_mode := true;
+        printf " VALUES ";
       | "AS" -> printf " AS "
       | "AND" ->
         printf "\n%sAND " (ind());
@@ -79,13 +95,17 @@ let format_string sql =
         indent := !indent - 1;
         printf "\n%sEND LOOP" (ind());
       | "[" -> raw_mode := true; printf "["
-      | ";" -> printf ";\n%s" (ind ())
+      | ";" ->
+        values_mode := false;
+        printf ";\n%s" (ind ())
       | "," -> printf "\n%s, " (ind ())
-      | "(" -> indent := !indent + 1; printf "(\n%s" (ind ())
+      | "(" ->
+        Stack.push !parenlevel !indent;
+        indent := !indent + 1;
+        printf "(\n%s" (ind ())
       | ")" -> 
-        indent := !indent - 1;
-        if (is_nth_equal parts (i + 1) "AND") then 
-          indent := !indent - 1;
+        indent := Option.value (Stack.pop !parenlevel) ~default:0;
+        where_clause := false;
         printf "\n%s)" (ind ())
       | _ ->  printf "%s " word
   ); 
