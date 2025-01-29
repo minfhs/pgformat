@@ -1,8 +1,4 @@
-(ocamllex lexer)
-
-(menhir
- (modules parser))
-
 (library
  (name pgformat)
- (modules ast lexer parser))
+ (libraries core str)
+ (modules pgformatter))

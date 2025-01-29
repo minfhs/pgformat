@@ -1,3 +1,6 @@
-(test
+(library
  (name test_pgformat)
- (libraries pgformat alcotest))
+ (libraries pgformat core)
+ (inline_tests)
+ (preprocess
+  (pps ppx_inline_test ppx_expect)))

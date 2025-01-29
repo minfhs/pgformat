@@ -12,6 +12,6 @@ SELECT id, fhs_id, state FROM applicants
 ) AS applicants
 ON applicants.id = reviews.applicant_id
 WHERE 
-reviews.room_id = (select id from rooms where abbr = $1) and
+reviews.room_id = (select id from rooms where abbr = $1 and y = x) and
 applicants.state IS NOT NULL and
 applicants.fhs_id IS NOT NULL;

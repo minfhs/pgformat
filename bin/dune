@@ -1,6 +1,6 @@
 (executable
  (public_name pgformat)
  (name main)
- (libraries pgformat)
+ (libraries pgformat core str)
  (preprocess
   (pps ppx_inline_test)))
