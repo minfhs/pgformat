@@ -19,6 +19,6 @@
  (name pgformat)
  (synopsis "Simple utility to format postgres sql with optinionated style")
  (description "Very opinionated style")
- (depends ocaml)
+ (depends ocaml core core_unix)
  (tags
   ("formatter" "postgres" "pretty print")))

@@ -12,6 +12,8 @@ bug-reports: "https://github.com/minfhs/pgformat/issues"
 depends: [
   "dune" {>= "3.17"}
   "ocaml"
+  "core"
+  "core_unix"
   "odoc" {with-doc}
 ]
 build: [

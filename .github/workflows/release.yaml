@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ocaml/setup-ocaml@v2
+        with:
+          ocaml-version: "5.3.0"
+          dune-cache: true
+      - run: opam install . --deps-only --with-test -y
+      - run: dune runtest
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ocaml/setup-ocaml@v2
+        with:
+          ocaml-version: "5.3.0"
+          dune-cache: true
+
+      - run: opam install . --deps-only --with-test -y
+
+      - run: dune build --profile=release
+
+      - name: Run semantic release
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          upload_url: ${{ steps.semantic.outputs.new_release_upload_url }}
+          files: _build/release/bin/pgformat
+          tag_name: ${{ steps.semantic.outputs.new_release_tag_name }}
