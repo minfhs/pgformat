@@ -2,7 +2,7 @@
 
 Here is a sample:
 
-```sql
+````sql
 SELECT
     reviews.id AS id
     , applicants.fhs_id AS fhs_id
@@ -29,5 +29,5 @@ WHERE
             AND y = x
     )
     AND applicants.state IS NOT NULL
-    AND applicants.fhs_id IS NOT NULL;
-```
+    AND applicants.fhs_id IS NOT NULL;```
+````

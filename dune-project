@@ -5,22 +5,20 @@
 (generate_opam_files true)
 
 (source
- (github username/reponame))
+ (github minfhs/pgformat))
 
-(authors "Author Name <author@example.com>")
+(authors "Alexander Brevig <alexander.brevig@hey.com>")
 
-(maintainers "Maintainer Name <maintainer@example.com>")
+(maintainers "Alexander Brevig <alexander.brevig@hey.com>")
 
-(license LICENSE)
+(license MIT)
 
-(documentation https://url/to/documentation)
+(documentation https://github.com/minfhs/pgformat)
 
 (package
  (name pgformat)
- (synopsis "A short synopsis")
- (description "A longer description")
+ (synopsis "Simple utility to format postgres sql with optinionated style")
+ (description "Very opinionated style")
  (depends ocaml)
  (tags
-  ("add topics" "to describe" your project)))
-
-; See the complete stanza docs at https://dune.readthedocs.io/en/stable/reference/dune-project/index.html
+  ("formatter" "postgres" "pretty print")))
