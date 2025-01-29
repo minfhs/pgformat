@@ -1,0 +1,22 @@
+{
+  "name": "pgformat",
+  "displayName": "PGFormat",
+  "repository": "github.com/minfhs/pgformat",
+  "version": "0.0.1",
+  "publisher": "minfhs",
+  "engines": { "vscode": "^1.50.0" },
+  "activationEvents": ["onLanguage:sql"],
+  "contributes": {
+    "configuration": {
+      "title": "pgformat",
+      "properties": {
+        "pgformat.path": {
+          "type": "string",
+          "default": "/usr/local/bin/pgformat",
+          "description": "Path to the formatter executable"
+        }
+      }
+    }
+  },
+  "main": "./extension.js"
+}
