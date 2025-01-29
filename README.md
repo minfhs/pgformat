@@ -1,6 +1,30 @@
 # Opinionated PostgreSQL formatter
 
-Here is a sample:
+## Install
+
+```sh
+just up
+just install # installs to /usr/local/bin
+```
+
+### Helix
+
+Edit your languages toml.
+
+```toml
+[[language]]
+name = "sql"
+auto-format = true
+formatter = { command = "pgformat" }
+```
+
+Check `hx --health sql`.
+
+### Visual Studio Code
+
+You can install an extension following this [guide](./.vscode/README.md).
+
+## Sample format
 
 ````sql
 SELECT
