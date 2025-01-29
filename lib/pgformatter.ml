@@ -1,5 +1,16 @@
 open Core
 
+let is_nth_equal lst n target =
+  (* Helper function to safely get the nth element *)
+  let rec get_nth lst n =
+    match lst with
+    | [] -> None
+    | hd :: tl -> if n = 0 then Some hd else get_nth tl (n - 1)
+  in
+  match get_nth lst n with
+  | Some item -> String.equal item target
+  | None -> false 
+
 let format_string sql =
   let buffer = Buffer.create 2048 in  (* Create a buffer *)
   let formatter = Format.formatter_of_buffer buffer in
@@ -19,7 +30,7 @@ let format_string sql =
   let parts = Str.split (Str.regexp " ") sql in
   let indent = ref 0 in
   let raw_mode = ref false in
-  List.iteri parts ~f:(fun _i word ->
+  List.iteri parts ~f:(fun i word ->
     let ind () =
       if !indent < 0 then indent := 0;
       String.make (!indent*4) ' ' in
@@ -36,7 +47,8 @@ let format_string sql =
         indent := !indent + 1;
         printf "%s" (ind())
       | "WHERE" -> 
-        printf "\n%sWHERE\n    %s" (ind()) (ind())
+        printf "\n%sWHERE\n    %s" (ind()) (ind());
+        indent := !indent + 1;
       | "CREATE" -> printf "\n%sCREATE " (ind())
       | "RETURNS" -> printf "\n%sRETURNS " (ind())
       | "LEFT" -> printf "\n%sLEFT " (ind())
@@ -61,9 +73,7 @@ let format_string sql =
       | "VALUES" -> printf " VALUES "
       | "AS" -> printf " AS "
       | "AND" ->
-        indent := !indent + 1;
         printf "\n%sAND " (ind());
-        indent := !indent - 1
       | "__EMPTY_PAREN" -> printf "()"
       | "__ENDLOOP" ->
         indent := !indent - 1;
@@ -72,7 +82,11 @@ let format_string sql =
       | ";" -> printf ";\n%s" (ind ())
       | "," -> printf "\n%s, " (ind ())
       | "(" -> indent := !indent + 1; printf "(\n%s" (ind ())
-      | ")" -> indent := !indent - 1; printf "\n%s)" (ind ())
+      | ")" -> 
+        indent := !indent - 1;
+        if (is_nth_equal parts (i + 1) "AND") then 
+          indent := !indent - 1;
+        printf "\n%s)" (ind ())
       | _ ->  printf "%s " word
   ); 
 
@@ -80,7 +94,9 @@ let format_string sql =
   let sql = Buffer.contents buffer in
   let sql = Str.global_replace (Str.regexp " \n") "\n" sql in
   let sql = Str.global_replace (Str.regexp "[ ]+;") ";" sql in
-  (* let sql = Str.global_replace (Str.regexp "[ ]+AS") " AS" sql in *)
+  let sql = Str.global_replace (Str.regexp "[ ]+AS") " AS" sql in
+  let sql = Str.global_replace (Str.regexp "^[ \t]*$") "" sql in
+  let sql = Str.global_replace (Str.regexp "\n+") "\n" sql in
   sql
   
 
