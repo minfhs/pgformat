@@ -12,6 +12,32 @@ let is_nth_equal lst n target =
   | None -> false
 ;;
 
+let values_mode_parse
+      prev
+      next
+      word
+      values_mode
+      (printf : ('a, Format.formatter, unit) format -> 'a)
+      tabs
+  =
+  if String.(next = ";") then values_mode := false;
+  match word with
+  | "," ->
+    if String.(prev = ")") && String.(next = "(")
+    then printf "\n%s    %s " tabs word
+    else printf "%s%s" word " "
+  | _ -> printf "%s%s" word ""
+;;
+
+let raw_mode_parse word raw_mode (printf : ('a, Format.formatter, unit) format -> 'a) =
+  let () = if String.equal "]" word then raw_mode := false in
+  match word with
+  | "__EMPTY_PAREN" -> printf "%s" "()"
+  | "," -> printf "%s" ", "
+  | "+" -> printf "%s" " + "
+  | _ -> printf "%s" word
+;;
+
 let format_string sql =
   let buffer = Buffer.create 2048 in
   (* Create a buffer *)
@@ -39,49 +65,42 @@ let format_string sql =
       if !indent < 0 then indent := 0;
       String.make (!indent * 4) ' '
     in
+    let tabs = ind () in
     if !raw_mode
-    then (
-      let () = if String.equal "]" word then raw_mode := false in
-      match word with
-      | "__EMPTY_PAREN" -> printf "()"
-      | "," -> printf ", "
-      | "+" -> printf " + "
-      | _ -> printf "%s" word)
+    then raw_mode_parse word raw_mode printf
     else if !values_mode
-    then (
-      let () = if is_nth_equal parts (i + 1) ";" then values_mode := false in
-      match word with
-      | "," ->
-        if is_nth_equal parts (i - 1) ")" && is_nth_equal parts (i + 1) "("
-        then printf "\n%s    %s " (ind ()) word
-        else printf "%s " word
-      | _ -> printf "%s" word)
+    then
+      values_mode_parse
+        (Option.value ~default:" " (List.nth parts (i - 1)))
+        (Option.value ~default:" " (List.nth parts (i + 1)))
+        word
+        values_mode
+        printf
+        tabs
     else (
       match String.uppercase (String.strip word) with
       | "SELECT" ->
-        printf
-          "\n%sSELECT%s"
-          (ind ())
-          (if is_nth_equal parts (i + 1) "(" then " " else "\n");
+        printf "\n%sSELECT" tabs;
         if not (is_nth_equal parts (i + 1) "(")
         then (
           let () = indent := !indent + 1 in
-          printf "%s" (ind ()))
+          printf "\n%s" (ind ()))
+        else printf " "
       | "WHERE" ->
         where_clause := true;
-        printf "\n%sWHERE\n    %s" (ind ()) (ind ());
+        printf "\n%sWHERE\n    %s" tabs tabs;
         indent := !indent + 1
-      | "CREATE" -> printf "\n%sCREATE " (ind ())
-      | "RETURNS" -> printf "\n%sRETURNS " (ind ())
-      | "LEFT" -> printf "\n%sLEFT " (ind ())
+      | "CREATE" -> printf "\n%sCREATE " tabs
+      | "RETURNS" -> printf "\n%sRETURNS " tabs
+      | "LEFT" -> printf "\n%sLEFT " tabs
       | "BEGIN" ->
-        printf "\nBEGIN\n%s" (ind ());
+        printf "\nBEGIN\n%s" tabs;
         indent := 1
       | "END" ->
         indent := !indent - 1;
         printf "\n%sEND" (ind ())
       | "IN" ->
-        printf "IN\n%s" (ind ());
+        printf "IN\n%s" tabs;
         indent := !indent + 1;
         printf "%s" (ind ())
       | "FROM" ->
@@ -94,14 +113,14 @@ let format_string sql =
         indent := !indent + 1;
         printf "%s" (ind ())
       | "DECLARE" ->
-        printf "\n%sDECLARE\n" (ind ());
+        printf "\n%sDECLARE\n" tabs;
         indent := !indent + 1;
         printf "%s" (ind ())
       | "VALUES" ->
         values_mode := true;
         printf " VALUES "
       | "AS" -> printf " AS "
-      | "AND" -> printf "\n%sAND " (ind ())
+      | "AND" -> printf "\n%sAND " tabs
       | "__EMPTY_PAREN" -> printf "()"
       | "__ENDLOOP" ->
         indent := !indent - 1;
@@ -111,8 +130,8 @@ let format_string sql =
         printf "["
       | ";" ->
         values_mode := false;
-        printf ";\n%s" (ind ())
-      | "," -> printf "\n%s, " (ind ())
+        printf ";\n%s" tabs
+      | "," -> printf "\n%s, " tabs
       | "(" ->
         Stack.push !parenlevel !indent;
         indent := !indent + 1;
