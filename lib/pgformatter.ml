@@ -17,18 +17,17 @@ let format_string sql =
   (* Create a buffer *)
   let formatter = Format.formatter_of_buffer buffer in
   let printf format = Format.fprintf formatter format in
-  let sql = Str.global_replace (Str.regexp ",") " , " sql in
-  let sql = Str.global_replace (Str.regexp "(") " ( " sql in
-  let sql = Str.global_replace (Str.regexp ")") " ) " sql in
-  let sql = Str.global_replace (Str.regexp "\\[") " [ " sql in
-  let sql = Str.global_replace (Str.regexp "]") " ] " sql in
-  let sql = Str.global_replace (Str.regexp ";") " ; " sql in
-  let sql = Str.global_replace (Str.regexp "[\t]+") " " sql in
-  let sql = Str.global_replace (Str.regexp "\n") " " sql in
-  let sql = Str.global_replace (Str.regexp "[ ]+") " " sql in
-  (* Special cases *)
-  let sql = Str.global_replace (Str.regexp "END LOOP") " __ENDLOOP " sql in
-  let sql = Str.global_replace (Str.regexp "( )") " __EMPTY_PAREN " sql in
+  let tokenize regmatch replacer inp =
+    Str.global_replace (Str.regexp regmatch) replacer inp
+  in
+  let sql =
+    sql
+    |> tokenize "]" " ] "
+    |> tokenize {|\([;,()\[]\)|} {| \0 |}
+    |> tokenize "[\t\n ]+" " "
+    |> tokenize "END LOOP" " __ENDLOOP "
+    |> tokenize "( )" " __EMPTY_PAREN "
+  in
   let parts = Str.split (Str.regexp " ") sql in
   let indent = ref 0 in
   let parenlevel = ref (Stack.create ()) in
