@@ -39,7 +39,10 @@ jobs:
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
         with:
-          branches: ["main"]
+          branches: |
+            [
+              'main'
+            ]
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
