@@ -19,6 +19,7 @@ let string_of_token = function
   | INTO -> "INTO"
   | WHERE -> "WHERE"
   | INSERT -> "INSERT"
+  | CREATE -> "CREATE"
   | COMMA -> ","
   | SEMICOLON -> ";"
   | LEFT_PAREN -> "("
@@ -33,6 +34,7 @@ let string_of_token = function
   | EQ -> "="
   | PLUS -> "+"
   | MINUS -> "-"
+  | EOF -> "\n"
   | _ -> failwith "NO"
 ;;
 
@@ -43,29 +45,78 @@ let parse_with_error lexbuf =
     None
 ;;
 
-let rec parse_and_print lexbuf =
-  match parse_with_error lexbuf with
-  | Some token ->
-    (match token with
-     | EOF -> ()
-     | SELECT | FROM | WHERE | INSERT ->
-       printf "\n%s\n" (string_of_token token);
-       parse_and_print lexbuf
-     | _ ->
-       printf "%s " (string_of_token token);
-       parse_and_print lexbuf)
-  | None -> ()
+let format_token indent_stack token before after =
+  let indent rel =
+    let ind = Stack.top !indent_stack in
+    String.make (4 * (Option.value ind ~default:0 + rel)) ' '
+  in
+  let tabs () = indent 0 in
+  let prt token = printf "%s%s " (tabs ()) (string_of_token token) in
+  let nl () = printf "\n" in
+  let increase_indent_push indent_stack =
+    let ind = Stack.top !indent_stack |> Option.value ~default:0 in
+    Stack.push !indent_stack (ind + 1)
+  in
+  let decrease_indent_pop indent_stack =
+    let _ = Stack.pop !indent_stack in
+    ()
+  in
+  match before, token, after with
+  | _, SELECT, Some LEFT_PAREN -> prt token
+  | _, SELECT, _ ->
+    increase_indent_push indent_stack;
+    prt token;
+    nl ();
+    printf "%s" (indent 0) (* prepare next token indented*)
+  | _, COMMA, _ ->
+    nl ();
+    prt token
+  | _, LEFT_PAREN, _ ->
+    prt token;
+    increase_indent_push indent_stack;
+    nl ();
+    printf "%s" (indent 0)
+  | _, RIGHT_PAREN, _ ->
+    decrease_indent_pop indent_stack;
+    nl ();
+    printf "%s%s" (tabs ()) (string_of_token token);
+    printf "%s" (indent 0)
+  | _, FROM, _ ->
+    nl ();
+    printf "%s%s " (indent (-1)) (string_of_token token)
+  | _, WHERE, _ | _, INSERT, _ | Some _, CREATE, _ ->
+    printf "\n%s%s " (tabs ()) (string_of_token token)
+  | _, _, _ -> printf "%s " (string_of_token token)
+;;
+
+let rec parse stack lexbuf tokens =
+  let tok = parse_with_error lexbuf in
+  (match tokens with
+   | cur :: prev :: _ -> format_token stack cur (Some prev) tok
+   | cur :: _ -> format_token stack cur None tok
+   | _ -> ());
+  match tok with
+  | Some EOF ->
+    format_token stack EOF None None;
+    EOF :: tokens
+  | Some tok -> parse stack lexbuf (tok :: tokens)
+  | None -> tokens
 ;;
 
 let loop filename =
   let inx = In_channel.create filename in
   let lexbuf = Lexing.from_channel inx in
   lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = filename };
-  parse_and_print lexbuf;
+  let stack = ref (Stack.create ()) in
+  let _ = Stack.push !stack 0 in
+  let _tokens = parse stack lexbuf [] in
+  (* let tokens = List.rev tokens in *)
+  (* List.iteri tokens ~f:(fun i t -> *)
+  (* format_token stack t (List.nth tokens (i - 1)) (List.nth tokens (i + 1))); *)
   In_channel.close inx
 ;;
 
-let () = loop "./fixture/complex.sql"
+let () = loop "./fixture/create.sql"
 
 (* let format_content = function *)
 (* | None | Some "-" -> In_channel.input_all In_channel.stdin |> Pgformatter.format_string *)

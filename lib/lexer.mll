@@ -4,10 +4,9 @@ open Lexing
 exception SyntaxError of string
 
 type t =
+    | ID of string
 	| INT of int
-	| FLOAT of float
-	| TRUE
-	| FALSE
+	| STRING of string
 	| NULL
 	| LEFT_PAREN
 	| RIGHT_PAREN
@@ -19,14 +18,13 @@ type t =
 	| SEMICOLON
 	| COMMA
 	| EOF
-	| STRING of string
-    | ID of string
     | SELECT
     | AS
     | FROM
     | INTO
     | VALUES
     | WHERE
+    | CREATE
     | INSERT
     | FUNC_DELIM
     | ASSIGN
@@ -54,13 +52,13 @@ let into = "INTO" | "Into" | "into"
 let values = "VALUES" | "Values" | "values"
 let from = "FROM" | "From" | "from"
 let insert = "INSERT" | "Insert" | "insert"
+let create = "CREATE" | "Create" | "create"
 
 rule read =
   parse
   | white    { read lexbuf }
   | newline  { new_line lexbuf; read lexbuf }
   | int      { INT (int_of_string (Lexing.lexeme lexbuf)) }
-  | "false"  { FALSE }
   | "null"   { NULL }
   | '\''      { read_string (Buffer.create 17) lexbuf }
   | "$$"     { FUNC_DELIM }
@@ -84,6 +82,7 @@ rule read =
   | into { INTO }
   | values { VALUES }
   | askw { AS }
+  | create { CREATE }
   | id { ID(Lexing.lexeme lexbuf) }
   | _ { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }
   | eof      { EOF }
