@@ -1,4 +1,6 @@
+(ocamllex lexer)
+
 (library
  (name pgformat)
  (libraries core str)
- (modules pgformatter))
+ (modules pgformatter lexer))
