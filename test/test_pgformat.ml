@@ -245,3 +245,14 @@ WHERE
         AND applicants.fhs_id IS NOT NULL;
     |}]
 ;;
+
+let%expect_test "Keep comments" =
+  format_script {|INSERT INTO yo (a,b) VALUES (1, 'OK', '"FAIL"', '{"a":1.2}');|};
+  [%expect
+    {|
+    INSERT INTO yo (
+        a
+        , b
+    ) VALUES (1 , 'OK', '"FAIL"', '{"a":1.2}');
+    |}]
+;;

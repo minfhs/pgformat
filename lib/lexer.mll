@@ -2,8 +2,6 @@
 open Lexing
 
 open Ast
-
-
 }
 
 let white = [' ' '\t']+
@@ -47,8 +45,8 @@ rule read =
   | int      { INT (int_of_string (Lexing.lexeme lexbuf)) }
   | float      { FLOAT (float_of_string (Lexing.lexeme lexbuf)) }
   | "null"   { NULL }
-  | '\''      { read_string (Buffer.create 256) lexbuf }
-  | '"'      { read_string (Buffer.create 256) lexbuf }
+  | '\''      { read_sstring (Buffer.create 256) lexbuf }
+  | '"'      { read_dstring (Buffer.create 256) lexbuf }
   | func_delim     { FUNC_DELIM }
   | '('      { LEFT_PAREN}
   | ')'      { RIGHT_PAREN}
@@ -86,21 +84,39 @@ rule read =
   | _ { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }
   | eof      { EOF }
 
-and read_string buf =
+and read_sstring buf =
   parse
-  | '\''       { SSTRING (Buffer.contents buf) }
-  | '"'       { DSTRING (Buffer.contents buf) }
-  | '\\' '/'  { Buffer.add_char buf '/'; read_string buf lexbuf }
-  | '\\' '\\' { Buffer.add_char buf '\\'; read_string buf lexbuf }
-  | '\\' 'b'  { Buffer.add_char buf '\b'; read_string buf lexbuf }
-  | '\\' 'f'  { Buffer.add_char buf '\012'; read_string buf lexbuf }
-  | '\\' 'n'  { Buffer.add_char buf '\n'; read_string buf lexbuf }
-  | '\\' 'r'  { Buffer.add_char buf '\r'; read_string buf lexbuf }
-  | '\\' 't'  { Buffer.add_char buf '\t'; read_string buf lexbuf }
-  | [^ '\'' '"']+
+  | '\\' '/'  { Buffer.add_char buf '/'; read_sstring buf lexbuf }
+  | '\\' '\\' { Buffer.add_char buf '\\'; read_sstring buf lexbuf }
+  | '\\' 'b'  { Buffer.add_char buf '\b'; read_sstring buf lexbuf }
+  | '\\' 'f'  { Buffer.add_char buf '\012'; read_sstring buf lexbuf }
+  | '\\' 'n'  { Buffer.add_char buf '\n'; read_sstring buf lexbuf }
+  | '\\' 'r'  { Buffer.add_char buf '\r'; read_sstring buf lexbuf }
+  | '\\' 't'  { Buffer.add_char buf '\t'; read_sstring buf lexbuf }
+  | "\\'"  { Buffer.add_string buf "\\'"; read_sstring buf lexbuf }
+  | [^ '\'']+
     { Buffer.add_string buf (Lexing.lexeme lexbuf);
-      read_string buf lexbuf
+      read_sstring buf lexbuf
     }
+  | '\''       { SSTRING (Buffer.contents buf) }
+  | _ { raise (SyntaxError ("Illegal string character: " ^ Lexing.lexeme lexbuf)) }
+  | eof { raise (SyntaxError ("String is not terminated")) }
+
+and read_dstring buf =
+  parse
+  | '\\' '/'  { Buffer.add_char buf '/'; read_dstring buf lexbuf }
+  | '\\' '\\' { Buffer.add_char buf '\\'; read_dstring buf lexbuf }
+  | '\\' 'b'  { Buffer.add_char buf '\b'; read_dstring buf lexbuf }
+  | '\\' 'f'  { Buffer.add_char buf '\012'; read_dstring buf lexbuf }
+  | '\\' 'n'  { Buffer.add_char buf '\n'; read_dstring buf lexbuf }
+  | '\\' 'r'  { Buffer.add_char buf '\r'; read_dstring buf lexbuf }
+  | '\\' 't'  { Buffer.add_char buf '\t'; read_dstring buf lexbuf }
+  | "\\\""  { Buffer.add_string buf "\\\""; read_dstring buf lexbuf }
+  | [^ '"']+
+    { Buffer.add_string buf (Lexing.lexeme lexbuf);
+      read_dstring buf lexbuf
+    }
+  | '"'       { DSTRING (Buffer.contents buf) }
   | _ { raise (SyntaxError ("Illegal string character: " ^ Lexing.lexeme lexbuf)) }
   | eof { raise (SyntaxError ("String is not terminated")) }
 
