@@ -3,4 +3,4 @@
 (library
  (name pgformat)
  (libraries core str)
- (modules pgformatter lexer))
+ (modules pgformatter lexer ast))
