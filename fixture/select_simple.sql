@@ -1,1 +1,4 @@
-SELECT users.id as id, name FROM users AS usrs;
+SELECT 
+    users.id AS id 
+    , name 
+FROM users AS usrs;
