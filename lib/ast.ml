@@ -8,6 +8,7 @@ type t =
   | DSTRING of string
   | ARRAY of string
   | COMMENT of string
+  | INLINE_COMMENT of string
   | NULL
   | LEFT_PAREN
   | RIGHT_PAREN
@@ -50,6 +51,7 @@ let string_of_token = function
   | FLOAT x -> string_of_float x
   | SSTRING x -> Printf.sprintf {|'%s'|} x
   | DSTRING x -> Printf.sprintf {|"%s"|} x
+  | INLINE_COMMENT x -> Printf.sprintf {|-- %s|} x
   | SELECT -> "SELECT"
   | AS -> "AS"
   | AND -> "AND"

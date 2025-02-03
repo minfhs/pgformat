@@ -8,7 +8,9 @@ This
 is a
 comment
 */
-SELECT a,b FROM x as y;|};
+SELECT a,b
+-- testing
+FROM x as y;|};
   [%expect
     {|
     /*
@@ -19,6 +21,7 @@ SELECT a,b FROM x as y;|};
     SELECT
         a
         , b
+    --  testing
     FROM x AS y;
     |}]
 ;;
@@ -246,7 +249,7 @@ WHERE
     |}]
 ;;
 
-let%expect_test "Keep comments" =
+let%expect_test "Nested strings" =
   format_script {|INSERT INTO yo (a,b) VALUES (1, 'OK', '"FAIL"', '{"a":1.2}');|};
   [%expect
     {|

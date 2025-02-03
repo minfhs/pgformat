@@ -41,7 +41,8 @@ rule read =
   parse
   | white    { read lexbuf }
   | newline  { new_line lexbuf; read lexbuf }
-  | "/*"     { read_comment (Buffer.create 1024) lexbuf }
+  | "/*"     { read_multiline_comment (Buffer.create 1024) lexbuf }
+  | "--"     { read_comment (Buffer.create 1024) lexbuf }
   | int      { INT (int_of_string (Lexing.lexeme lexbuf)) }
   | float      { FLOAT (float_of_string (Lexing.lexeme lexbuf)) }
   | "null"   { NULL }
@@ -120,9 +121,18 @@ and read_dstring buf =
   | _ { raise (SyntaxError ("Illegal string character: " ^ Lexing.lexeme lexbuf)) }
   | eof { raise (SyntaxError ("String is not terminated")) }
 
-and read_comment buf =
+and read_multiline_comment buf =
   parse
   | "*/"     { COMMENT (Buffer.contents buf) }
+  | _
+    { Buffer.add_string buf (Lexing.lexeme lexbuf);
+      read_multiline_comment buf lexbuf
+    }
+  | eof { raise (SyntaxError ("String is not terminated")) }
+
+and read_comment buf =
+  parse
+  | newline     { INLINE_COMMENT (Buffer.contents buf) }
   | _
     { Buffer.add_string buf (Lexing.lexeme lexbuf);
       read_comment buf lexbuf

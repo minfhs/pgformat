@@ -39,6 +39,7 @@ let format_token indent_level indent_stack values_mode token before after =
   let prt_ind () = printf "%s" (indent 0) in
   match before, token, after with
   | _, COMMENT c, _ -> printf "/*%s*/\n" c
+  | _, INLINE_COMMENT _, _ -> prt_nltok token
   | _, VALUES, _ ->
     values_mode := true;
     indent_inc ();
