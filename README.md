@@ -1,10 +1,26 @@
 # Opinionated PostgreSQL formatter
 
+This is _our_ style. Feel free to try it out, but expectc not to like it.
+
 ## Install
 
 ```sh
 just up
 just install # installs to /usr/local/bin
+```
+
+## Play
+
+```sh
+# Run tests in watchmode
+dune runtest -w
+# Edit source and see if tests still pass
+```
+
+Manually run a test on a specific file
+
+```sh
+dune exec pgformat -- ./fixture/complex.sql
 ```
 
 ### Helix
@@ -25,6 +41,8 @@ Check `hx --health sql`.
 You can install an extension following this [guide](./.vscode/README.md).
 
 ## Sample format
+
+You can also check [fixture](./fixture) as they are all formatted with the latest version.
 
 ### Before
 

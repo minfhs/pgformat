@@ -1,6 +1,6 @@
 (library
  (name test_pgformat)
- (libraries pgformat core)
+ (libraries pgformat core core_unix)
  (inline_tests)
  (preprocess
   (pps ppx_inline_test ppx_expect)))
