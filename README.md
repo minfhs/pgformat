@@ -1,6 +1,6 @@
 # Opinionated PostgreSQL formatter
 
-This is _our_ style. Feel free to try it out, but expectc not to like it.
+This is _our_ style. Feel free to try it out, but expect not to like it.
 
 ## Install
 
