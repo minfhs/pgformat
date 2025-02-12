@@ -22,6 +22,7 @@ FROM x as y;|};
         a
         , b
     --  testing
+
     FROM x AS y;
     |}]
 ;;
