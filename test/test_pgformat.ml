@@ -196,6 +196,7 @@ let%expect_test "Advanced Funct Seed" =
                 , room_id
             ) VALUES (u_id, r_id);
         END LOOP;
+
     END;
     $$ LANGUAGE plpgsql;
     |}]
@@ -257,5 +258,77 @@ let%expect_test "Nested strings" =
         a
         , b
     ) VALUES (1 , 'OK', '"FAIL"', '{"a":1.2}');
+    |}]
+;;
+
+let%expect_test "REFERENCES mode" =
+  format_script
+    {| CREATE TABLE IF NOT EXISTS room_events (
+    id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY 
+    , room_id INTEGER NOT NULL REFERENCES rooms ( id  ) 
+    , created_at TIMESTAMPTZ NOT NULL DEFAULT NOW ()  ); |};
+  [%expect {|
+    CREATE TABLE IF NOT EXISTS room_events (
+        id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY
+        , room_id INTEGER NOT NULL REFERENCES rooms ( id )
+        , created_at TIMESTAMPTZ NOT NULL DEFAULT NOW ()
+    );
+    |}]
+;;
+
+let%expect_test "Complex seed function and exec" =
+  format_script
+    {|CREATE FUNCTION seed_room_event ( room_abbr TEXT , user_email TEXT , title TEXT )
+RETURNS void AS $$ BEGIN
+
+INSERT INTO room_events ( room_id , creator_id , title )
+VALUES (( SELECT id FROM rooms WHERE abbr= room_abbr)
+          , ( SELECT id FROM users WHERE email= user_email)
+          , title);
+END; $$ LANGUAGE plpgsql;
+SELECT seed_room_event ( 'ALL' , 'admin@admin.com' , 'Event Alle' );
+SELECT seed_room_event ( 'CG' , 'admin@admin.com' , 'Event CG' );
+SELECT seed_room_event ( 'RM' , 'admin@admin.com' , 'Event RM' );|};
+  [%expect
+    {|
+    CREATE FUNCTION seed_room_event (
+        room_abbr TEXT
+        , user_email TEXT
+        , title TEXT
+    )
+    RETURNS void AS
+    $$
+    BEGIN
+
+        INSERT INTO room_events (
+            room_id
+            , creator_id
+            , title
+        ) VALUES ((SELECT id FROM rooms WHERE abbr= room_abbr)
+            , (SELECT id FROM users WHERE email= user_email) , title);
+
+    END;
+    $$ LANGUAGE plpgsql;
+
+    SELECT
+        seed_room_event (
+            'ALL'
+            , 'admin@admin.com'
+            , 'Event Alle'
+        );
+
+    SELECT
+        seed_room_event (
+            'CG'
+            , 'admin@admin.com'
+            , 'Event CG'
+        );
+
+    SELECT
+        seed_room_event (
+            'RM'
+            , 'admin@admin.com'
+            , 'Event RM'
+        );
     |}]
 ;;

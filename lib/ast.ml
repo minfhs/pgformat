@@ -16,6 +16,8 @@ type t =
   | RIGHT_BRACE
   | LEFT_BRACK
   | RIGHT_BRACK
+  | LT
+  | GT
   | COLON
   | COLONS
   | SEMICOLON
@@ -31,6 +33,7 @@ type t =
   | FROM
   | INTO
   | VALUES
+  | REFERENCES
   | WHERE
   | CREATE
   | INSERT
@@ -41,6 +44,7 @@ type t =
   | PLUS
   | MINUS
   | RETURNS
+  | END
   | DECLARE
   | LANGUAGE
   | TODO
@@ -75,6 +79,8 @@ let string_of_token = function
   | RIGHT_BRACK -> "]"
   | COLON -> ":"
   | RETURNS -> "RETURNS"
+  | REFERENCES -> "REFERENCES"
+  | END -> "END"
   | LOOP -> "LOOP"
   | END_LOOP -> "END LOOP"
   | FUNC_DELIM -> "$$"
@@ -83,6 +89,9 @@ let string_of_token = function
   | EQ -> "="
   | PLUS -> "+"
   | MINUS -> "-"
+  | LT -> "<"
+  | GT -> ">"
+  | NULL -> "NULL"
   | ARRAY a -> a
   | LANGUAGE -> "LANGUAGE"
   | EOF -> "\n"

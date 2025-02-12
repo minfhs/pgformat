@@ -27,11 +27,14 @@ let create = "CREATE" | "Create" | "create"
 let left = "LEFT" | "Left" | "left"
 let andkw = "AND" | "And" | "and"
 let returns = "RETURNS" | "Returns" | "returns"
+let endkw = "END" | "End" | "end"
 let declare = "DECLARE" | "Declare" | "declare"
+let references = "REFERENCES" | "References" | "references"
 let in = "IN" | "In" | "in"
 let language = "LANGUAGE" | "Language" | "language"
 let loop = "LOOP" | "Loop" | "loop"
 let end = "END" | "End" | "end"
+let null = "NULL" | "Null" | "null"
 let end_loop = end white+ loop 
 let func_delim = ['$'] id* ['$']
 let array_lit = ['['] [^ ']']* [']']
@@ -45,10 +48,12 @@ rule read =
   | "--"     { read_comment (Buffer.create 1024) lexbuf }
   | int      { INT (int_of_string (Lexing.lexeme lexbuf)) }
   | float      { FLOAT (float_of_string (Lexing.lexeme lexbuf)) }
-  | "null"   { NULL }
+  | null     { NULL }
   | '\''      { read_sstring (Buffer.create 256) lexbuf }
   | '"'      { read_dstring (Buffer.create 256) lexbuf }
   | func_delim     { FUNC_DELIM }
+  | '>' { GT }
+  | '<' { LT }
   | '('      { LEFT_PAREN}
   | ')'      { RIGHT_PAREN}
   | '{'      { LEFT_BRACE }
@@ -75,6 +80,8 @@ rule read =
   | create { CREATE }
   | left { LEFT }
   | returns { RETURNS }
+  | references { REFERENCES }
+  | end { END }
   | declare { DECLARE }
   | in { IN }
   | language { LANGUAGE }
