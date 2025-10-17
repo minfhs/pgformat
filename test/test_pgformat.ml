@@ -35,6 +35,16 @@ let%expect_test "Simple SELECT star" =
     |}]
 ;;
 
+let%expect_test "Simple SELECT COUNT" =
+  format_script "SELECT COUNT(*) FROM x;";
+  [%expect
+    {|
+    SELECT
+        COUNT(*)
+    FROM x;
+    |}]
+;;
+
 let%expect_test "Simple SELECT" =
   format_script "SELECT a,b FROM x as y;";
   [%expect
@@ -43,6 +53,18 @@ let%expect_test "Simple SELECT" =
         a
         , b
     FROM x AS y;
+    |}]
+;;
+
+let%expect_test "Simple SELECT ORDER BY" =
+  format_script "SELECT a,b FROM x as y ORDER BY y;";
+  [%expect
+    {|
+    SELECT
+        a
+        , b
+    FROM x AS y
+    ORDER BY y;
     |}]
 ;;
 
@@ -57,12 +79,12 @@ let%expect_test "Simple CREATE" =
     CREATE INDEX ON semesters(id, title);|};
   [%expect
     {|
-    CREATE TABLE IF NOT EXISTS semesters (
+    CREATE TABLE IF NOT EXISTS semesters(
         id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY -- some comment on id
         , title TEXT NOT NULL -- some comment on title
     );
 
-    CREATE INDEX ON semesters (
+    CREATE INDEX ON semesters(
         id
         , title
     );
@@ -87,7 +109,7 @@ let%expect_test "Simple SELECT" =
   |};
   [%expect
     {|
-    INSERT INTO users (
+    INSERT INTO users(
         first_name
         , last_name
         , email
@@ -157,7 +179,7 @@ let%expect_test "Advanced Funct Seed" =
     |};
   [%expect
     {|
-    CREATE FUNCTION seed_optional_for (
+    CREATE FUNCTION seed_optional_for(
         user_email TEXT
     )
     RETURNS void AS $$
@@ -193,13 +215,13 @@ let%expect_test "Advanced Funct Seed" =
                     )
             );
 
-            INSERT INTO schedule_enrollments (
+            INSERT INTO schedule_enrollments(
                 schedule_id
                 , user_id
                 , room_id
             ) VALUES (s.id, u_id, r_id);
 
-            INSERT INTO user_enrollments (
+            INSERT INTO user_enrollments(
                 user_id
                 , room_id
             ) VALUES (u_id, r_id);
@@ -261,7 +283,7 @@ let%expect_test "Nested strings" =
   format_script {|INSERT INTO yo (a,b) VALUES (1, 'OK', '"FAIL"', '{"a":1.2}');|};
   [%expect
     {|
-    INSERT INTO yo (
+    INSERT INTO yo(
         a
         , b
     ) VALUES (1 , 'OK', '"FAIL"', '{"a":1.2}');
@@ -276,10 +298,10 @@ let%expect_test "REFERENCES mode" =
     , created_at TIMESTAMPTZ NOT NULL DEFAULT NOW ()  ); |};
   [%expect
     {|
-    CREATE TABLE IF NOT EXISTS room_events (
+    CREATE TABLE IF NOT EXISTS room_events(
         id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY
-        , room_id INTEGER NOT NULL REFERENCES rooms ( id )
-        , created_at TIMESTAMPTZ NOT NULL DEFAULT NOW ()
+        , room_id INTEGER NOT NULL REFERENCES rooms( id )
+        , created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     |}]
 ;;
@@ -300,14 +322,14 @@ SELECT seed_room_event ( 'CG' , 'admin@admin.com' , 'Event CG' );
 SELECT seed_room_event ( 'RM' , 'admin@admin.com' , 'Event RM' );|};
   [%expect
     {|
-    CREATE FUNCTION seed_room_event (
+    CREATE FUNCTION seed_room_event(
         room_abbr TEXT
         , user_email TEXT
         , title TEXT
     )
     RETURNS void AS $$
     BEGIN
-        INSERT INTO room_events (
+        INSERT INTO room_events(
             room_id
             , creator_id
             , title
@@ -317,24 +339,215 @@ SELECT seed_room_event ( 'RM' , 'admin@admin.com' , 'Event RM' );|};
     $$ LANGUAGE plpgsql;
 
     SELECT
-        seed_room_event (
+        seed_room_event(
             'ALL'
             , 'admin@admin.com'
             , 'Event Alle'
         );
 
     SELECT
-        seed_room_event (
+        seed_room_event(
             'CG'
             , 'admin@admin.com'
             , 'Event CG'
         );
 
     SELECT
-        seed_room_event (
+        seed_room_event(
             'RM'
             , 'admin@admin.com'
             , 'Event RM'
         );
+    |}]
+;;
+
+let%expect_test "README Basic Example" =
+  format_script "SELECT a,b FROM users;";
+  [%expect
+    {|
+    SELECT
+        a
+        , b
+    FROM users;
+    |}]
+;;
+
+let%expect_test "README Complex Before/After Example" =
+  format_script
+    {|SELECT reviews.id AS id, applicants.fhs_id AS fhs_id, applicants.id AS applicant_id, reviews.room_id , reviews.user_id , reviews.state AS "state: ReviewState"
+    , applicants.state AS "applicant_state: ApplicantState"
+FROM applicant_reviews AS reviews LEFT JOIN (
+    SELECT id , fhs_id , state FROM applicants ) AS applicants ON applicants.id
+    = reviews.applicant_id
+WHERE
+    reviews.room_id = ( SELECT id FROM rooms
+        WHERE abbr = $1 AND y = x )
+    AND applicants.state IS NOT NULL AND applicants.fhs_id IS NOT NULL;|};
+  [%expect
+    {|
+    SELECT
+        reviews.id AS id
+        , applicants.fhs_id AS fhs_id
+        , applicants.id AS applicant_id
+        , reviews.room_id
+        , reviews.user_id
+        , reviews.state AS "state: ReviewState"
+        , applicants.state AS "applicant_state: ApplicantState"
+    FROM applicant_reviews AS reviews
+    LEFT JOIN (
+        SELECT
+            id
+            , fhs_id
+            , state
+        FROM applicants
+    ) AS applicants ON applicants.id = reviews.applicant_id
+    WHERE
+        reviews.room_id = (
+            SELECT
+                id
+            FROM rooms
+            WHERE
+                abbr = $1
+                AND y = x
+        )
+        AND applicants.state IS NOT NULL
+        AND applicants.fhs_id IS NOT NULL;
+    |}]
+;;
+
+let%expect_test "README Fixture Select Simple" =
+  format_script
+    {|SELECT 
+    users.id AS id 
+    , name 
+FROM users AS usrs;|};
+  [%expect
+    {|
+    SELECT
+        users.id AS id
+        , name
+    FROM users AS usrs;
+    |}]
+;;
+
+let%expect_test "README Configuration Example - INSERT with multiple VALUES" =
+  format_script
+    {|INSERT INTO users (first_name, last_name, email) VALUES ('John', 'Doe', 'john@example.com'), ('Jane', 'Smith', 'jane@example.com');|};
+  [%expect
+    {|
+    INSERT INTO users(
+        first_name
+        , last_name
+        , email
+    ) VALUES ('John', 'Doe', 'john@example.com')
+        , ('Jane', 'Smith', 'jane@example.com');
+    |}]
+;;
+
+let%expect_test "README example - basic stdin formatting" =
+  format_script "SELECT a,b FROM users;";
+  [%expect
+    {|
+    SELECT
+        a
+        , b
+    FROM users;
+    |}]
+;;
+
+let%expect_test "README example - complex query before/after" =
+  format_script
+    {|SELECT reviews.room_id , reviews.user_id , reviews.state AS "state: ReviewState"
+    , applicants.state AS "applicant_state: ApplicantState"
+FROM applicant_reviews AS reviews LEFT JOIN (
+    SELECT id , fhs_id , state FROM applicants ) AS applicants ON applicants.id
+    = reviews.applicant_id
+WHERE
+    reviews.room_id = ( SELECT id FROM rooms
+        WHERE abbr = $1 AND y = x )
+    AND applicants.state IS NOT NULL AND applicants.fhs_id IS NOT NULL;|};
+  [%expect
+    {|
+    SELECT
+        reviews.room_id
+        , reviews.user_id
+        , reviews.state AS "state: ReviewState"
+        , applicants.state AS "applicant_state: ApplicantState"
+    FROM applicant_reviews AS reviews
+    LEFT JOIN (
+        SELECT
+            id
+            , fhs_id
+            , state
+        FROM applicants
+    ) AS applicants ON applicants.id = reviews.applicant_id
+    WHERE
+        reviews.room_id = (
+            SELECT
+                id
+            FROM rooms
+            WHERE
+                abbr = $1
+                AND y = x
+        )
+        AND applicants.state IS NOT NULL
+        AND applicants.fhs_id IS NOT NULL;
+    |}]
+;;
+
+let%expect_test "README example - corrected complex query with all fields" =
+  format_script
+    {|SELECT reviews.id AS id, applicants.fhs_id AS fhs_id, applicants.id AS applicant_id, reviews.room_id , reviews.user_id , reviews.state AS "state: ReviewState"
+    , applicants.state AS "applicant_state: ApplicantState"
+FROM applicant_reviews AS reviews LEFT JOIN (
+    SELECT id , fhs_id , state FROM applicants ) AS applicants ON applicants.id
+    = reviews.applicant_id
+WHERE
+    reviews.room_id = ( SELECT id FROM rooms
+        WHERE abbr = $1 AND y = x )
+    AND applicants.state IS NOT NULL AND applicants.fhs_id IS NOT NULL;|};
+  [%expect
+    {|
+    SELECT
+        reviews.id AS id
+        , applicants.fhs_id AS fhs_id
+        , applicants.id AS applicant_id
+        , reviews.room_id
+        , reviews.user_id
+        , reviews.state AS "state: ReviewState"
+        , applicants.state AS "applicant_state: ApplicantState"
+    FROM applicant_reviews AS reviews
+    LEFT JOIN (
+        SELECT
+            id
+            , fhs_id
+            , state
+        FROM applicants
+    ) AS applicants ON applicants.id = reviews.applicant_id
+    WHERE
+        reviews.room_id = (
+            SELECT
+                id
+            FROM rooms
+            WHERE
+                abbr = $1
+                AND y = x
+        )
+        AND applicants.state IS NOT NULL
+        AND applicants.fhs_id IS NOT NULL;
+    |}]
+;;
+
+let%expect_test "VS Code README example - simple formatting" =
+  format_script "SELECT id,name,email FROM users WHERE active=true;";
+  [%expect
+    {|
+    SELECT
+        id
+        , name
+        , email
+    FROM users
+    WHERE
+        active = true;
     |}]
 ;;

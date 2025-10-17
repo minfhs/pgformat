@@ -10,7 +10,7 @@ module TokenClassifier = struct
 
   let is_structural_keyword = function
     | SELECT | FROM | WHERE | CREATE | INSERT | VALUES | BEGIN | END
-    | DECLARE | LOOP | END_LOOP -> true
+    | DECLARE | LOOP | END_LOOP | ORDER | GROUP | HAVING -> true
     | _ -> false
 
   let is_join_keyword = function
@@ -27,6 +27,6 @@ module TokenClassifier = struct
 
   let requires_newline_before = function
     | SELECT | FROM | WHERE | CREATE | INSERT | BEGIN | END 
-    | DECLARE | AND | OR | LEFT | JOIN -> true
+    | DECLARE | AND | OR | LEFT | JOIN | ORDER | GROUP | HAVING -> true
     | _ -> false
 end

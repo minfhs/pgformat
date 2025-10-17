@@ -22,6 +22,9 @@ module PunctuationFormatter (O : Output) (Config : sig val config : format_confi
     | Some RIGHT_PAREN ->
         (* Empty parentheses - keep on same line *)
         ()
+    | Some STAR ->
+        (* Simple cases like COUNT(star) - keep on same line *)
+        ()
     | _ ->
         if is_references_mode state then
           print_string " "
@@ -33,10 +36,14 @@ module PunctuationFormatter (O : Output) (Config : sig val config : format_confi
         )
 
   let format_right_paren state before_token next_token =
-    (* Special handling for empty parentheses *)
+    (* Special handling for simple parenthetical expressions *)
     match before_token with
     | Some LEFT_PAREN ->
         (* Empty parentheses () - use simple formatting *)
+        print_token RIGHT_PAREN;
+        if not (next_token = Some SEMICOLON) then print_string " "
+    | Some STAR ->
+        (* Simple cases like COUNT(star) - keep inline *)
         print_token RIGHT_PAREN;
         if not (next_token = Some SEMICOLON) then print_string " "
     | _ ->

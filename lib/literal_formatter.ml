@@ -34,7 +34,13 @@ module LiteralFormatter (O : Output) (Config : sig val config : format_config en
     print_string op
 
   let format_identifier state id next_token =
-    format_with_conditional_space state (ID id) next_token
+    (* Function calls should not have space before parenthesis *)
+    let space = 
+      if next_token = Some SEMICOLON || next_token = Some LEFT_PAREN || is_values_mode state 
+      then "" 
+      else " " 
+    in
+    print_string ((string_of_token (ID id)) ^ space)
 
   let format_null state next_token =
     format_with_conditional_space state NULL next_token

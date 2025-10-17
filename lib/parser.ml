@@ -96,6 +96,10 @@ module MakeFormatter (O : Output.Output) (Config : sig val config : Config.forma
         (* Handle numbers like identifiers - only add space when needed *)
         let space = if Poly.(after_token = Some SEMICOLON) then "" else " " in
         print_string ((string_of_token token) ^ space)
+    | STAR ->
+        (* Handle STAR specially - don't add space when followed by RIGHT_PAREN *)
+        let space = if Poly.(after_token = Some RIGHT_PAREN) then "" else " " in
+        print_string ((string_of_token token) ^ space)
     | LANGUAGE when (Poly.(before_token = Some FUNC_DELIM)) ->
         (* Add space before LANGUAGE when it follows $$ *)
         print_string " ";
