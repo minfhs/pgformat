@@ -1,6 +1,25 @@
 open Core
 open Ast
 
+(* Structured error types for better error handling *)
+type parse_error = 
+  | SyntaxError of string * Lexing.position
+  | UnexpectedToken of string * Lexing.position
+  | LexerError of string * Lexing.position
+
+type 'a parse_result = ('a, parse_error) result
+
+let string_of_parse_error = function
+  | SyntaxError (msg, pos) -> 
+      Printf.sprintf "Syntax error at line %d, column %d: %s" 
+        pos.pos_lnum (pos.pos_cnum - pos.pos_bol + 1) msg
+  | UnexpectedToken (token, pos) -> 
+      Printf.sprintf "Unexpected token '%s' at line %d, column %d" 
+        token pos.pos_lnum (pos.pos_cnum - pos.pos_bol + 1)
+  | LexerError (msg, pos) -> 
+      Printf.sprintf "Lexer error at line %d, column %d: %s" 
+        pos.pos_lnum (pos.pos_cnum - pos.pos_bol + 1) msg
+
 (* Configuration for formatting rules *)
 type format_config = {
   indent_size: int;
@@ -497,35 +516,43 @@ module MakeFormatter (O : Output) (Config : sig val config : format_config end) 
     (* Default case - just print with space *)
     | _ -> PrintHelpers.print_token_with_space token
 
-  (* Parse error handling *)
+  (* Parse error handling with structured error types *)
   let parse_with_error lexbuf =
-    try Some (Lexer.read lexbuf) with
+    try Ok (Lexer.read lexbuf) with
     | SyntaxError msg ->
-      Printf.eprintf "%s" msg;
-      None
+        let pos = lexbuf.lex_curr_p in
+        Error (SyntaxError (msg, pos))
+    | Failure msg when String.is_prefix msg ~prefix:"lexing" ->
+        let pos = lexbuf.lex_curr_p in
+        Error (LexerError (msg, pos))
+    | exn ->
+        let pos = lexbuf.lex_curr_p in
+        Error (SyntaxError (Exn.to_string exn, pos))
 
   (* Token history management *)
   let take2 = function
     | a :: b :: _ -> [a; b]
     | lst -> lst
 
-  (* Main parsing loop *)
+  (* Main parsing loop with error handling *)
   let rec parse state lexbuf tokens =
-    let next_token = parse_with_error lexbuf in
-    (* Format current token based on context *)
-    (match tokens with
-     | current :: previous :: _ ->
-       format_token state current (Some previous) next_token
-     | current :: _ ->
-       format_token state current None next_token
-     | _ -> ());
-    (* Continue parsing *)
-    match next_token with
-    | Some EOF ->
-       format_token state EOF None None
-    | Some token ->
-       parse state lexbuf (take2 (token :: tokens))
-    | None -> ()
+    match parse_with_error lexbuf with
+    | Error error ->
+        Printf.eprintf "%s\n" (string_of_parse_error error)
+    | Ok next_token ->
+        (* Format current token based on context *)
+        (match tokens with
+         | current :: previous :: _ ->
+           format_token state current (Some previous) (Some next_token)
+         | current :: _ ->
+           format_token state current None (Some next_token)
+         | _ -> ());
+        (* Continue parsing *)
+        match next_token with
+        | EOF ->
+           format_token state EOF None None
+        | token ->
+           parse state lexbuf (take2 (token :: tokens))
 
   (* Main format function *)
   let format lexbuf =
