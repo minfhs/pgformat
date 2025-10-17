@@ -1,6 +1,17 @@
 open Core
 open Ast
 
+(* Output interface for formatting *)
+module type Output = sig
+  val print_string : string -> unit
+  val print_newline : unit -> unit
+end
+
+module PrintOutput : Output = struct
+  let print_string s = printf "%s" s
+  let print_newline () = printf "\n"
+end
+
 (* Types for formatter state *)
 type formatter_state = {
   indent_level: int ref;
@@ -10,27 +21,30 @@ type formatter_state = {
 }
 
 (* Helper functions for printing and indentation *)
-module PrintHelpers = struct
+module PrintHelpers (O : Output) = struct
   let indent_size = 4
 
   let make_indent level = String.make (indent_size * level) ' '
 
-  let print_newline () = printf "\n"
+  let print_newline () = O.print_newline ()
 
-  let print_token token = printf "%s" (string_of_token token)
+  let print_token token = O.print_string (string_of_token token)
 
-  let print_token_with_space token = printf "%s " (string_of_token token)
+  let print_token_with_space token = O.print_string ((string_of_token token) ^ " ")
 
   let print_indented_token ?(extra_indent = 0) token level =
-    printf "%s%s" (make_indent (level + extra_indent)) (string_of_token token)
+    O.print_string (make_indent (level + extra_indent) ^ (string_of_token token))
 
   let print_indented_token_with_space ?(extra_indent = 0) token level =
-    printf "%s%s " (make_indent (level + extra_indent)) (string_of_token token)
+    O.print_string (make_indent (level + extra_indent) ^ (string_of_token token) ^ " ")
 
   let print_newline_token token =
-    printf "\n%s" (string_of_token token)
+    O.print_newline ();
+    O.print_string (string_of_token token)
 
-  let print_current_indent level = printf "%s" (make_indent level)
+  let print_current_indent level = O.print_string (make_indent level)
+  
+  let print_string s = O.print_string s
 end
 
 (* State management functions *)
@@ -93,14 +107,15 @@ module TokenClassifier = struct
 end
 
 (* Core formatting logic for different token types *)
-module TokenFormatters = struct
+module TokenFormatters (O : Output) = struct
+  module PrintHelpers = PrintHelpers (O)
   open PrintHelpers
   open StateHelpers
 
   let format_comment _state comment next_token =
     match next_token with
-    | Some SELECT | Some INSERT -> printf "/*%s*/\n" comment
-    | _ -> printf "/*%s*/" comment
+    | Some SELECT | Some INSERT -> print_string ("/*" ^ comment ^ "*/"); print_newline ()
+    | _ -> print_string ("/*" ^ comment ^ "*/")
 
   let format_inline_comment _state _comment =
     print_token _comment;
@@ -116,13 +131,13 @@ module TokenFormatters = struct
     print_token_with_space token
 
   let format_array _state array_content =
-    printf "%s" array_content
+    print_string array_content
 
   let format_parameter _state param =
-    printf "%s" param
+    print_string param
 
   let format_special_operator _state op =
-    printf "%s" op
+    print_string op
 
   let format_identifier state id next_token =
     let space = 
@@ -130,7 +145,7 @@ module TokenFormatters = struct
       then "" 
       else " " 
     in
-    printf "%s%s" id space
+    print_string (id ^ space)
 
   let format_null state next_token =
     let space = 
@@ -139,7 +154,7 @@ module TokenFormatters = struct
       else " " 
     in
     print_token NULL;
-    printf "%s" space
+    print_string space
 
   let format_create state before_token =
     match before_token with
@@ -193,7 +208,7 @@ module TokenFormatters = struct
        | _ -> print_newline ());
       print_indented_token_with_space FROM (get_indent_level state)
     ) else (
-      printf " ";
+      print_string " ";
       print_token_with_space FROM
     )
 
@@ -205,7 +220,7 @@ module TokenFormatters = struct
       increment_indent state;
       print_current_indent (get_indent_level state)
     ) else (
-      printf " ";
+      print_string " ";
       print_token_with_space WHERE
     )
 
@@ -244,7 +259,7 @@ module TokenFormatters = struct
         )
     | _ ->
         if is_references_mode state then
-          printf " "
+          print_string " "
         else if (not (is_values_mode state)) && not (is_references_mode state) then (
           push_indent state;
           increment_indent state;
@@ -263,7 +278,7 @@ module TokenFormatters = struct
     ) else 
       print_token RIGHT_PAREN;
     disable_references_mode state;
-    if not (Poly.(next_token = Some SEMICOLON)) then printf " "
+    if not (Poly.(next_token = Some SEMICOLON)) then print_string " "
 
   let format_semicolon state next_token =
     (* Handle values mode cleanup *)
@@ -286,7 +301,7 @@ module TokenFormatters = struct
         print_newline ()
     | Some LANGUAGE ->
         (* Don't add extra newline after semicolon before LANGUAGE *)
-        printf " "
+        print_string " "
     | Some BEGIN ->
         (* After variable declarations, decrease indent before BEGIN *)
         (* Don't add newline - BEGIN handler will add its own *)
@@ -361,102 +376,11 @@ module TokenFormatters = struct
         print_newline ();
         print_token FUNC_DELIM
     | Some LANGUAGE ->
-        printf " ";
+        print_string " ";
         print_token FUNC_DELIM
     | _ -> 
         print_token FUNC_DELIM
 end
-
-(* Main token formatting dispatch *)
-let format_token state token before_token after_token =
-  let open TokenFormatters in
-  match before_token, token, after_token with
-  (* Comments *)
-  | _, COMMENT c, next -> format_comment state c next
-  | _, INLINE_COMMENT _, _ -> format_inline_comment state token
-  
-  (* String literals and identifiers *)
-  | _, SSTRING _, _ | _, DSTRING _, _ | _, QUOTED_ID _, _ -> format_string_literal state token
-  | _, COLONS, _ -> format_simple_token state token
-  | _, ID id, next -> format_identifier state id next
-  | _, NULL, next -> format_null state next
-  | _, ARRAY a, _ -> format_array state a
-  | _, PARAMETER p, _ -> format_parameter state p
-  | _, JSON_OP op, _ | _, TEXT_SEARCH_OP op, _ -> format_special_operator state op
-  
-  (* Simple operators *)
-  | _, tok, _ when TokenClassifier.is_simple_operator tok -> format_operator state tok
-  
-  (* Structural keywords *)
-  | before, CREATE, _ -> format_create state before
-  | before, INSERT, _ -> format_insert state before
-  | before, SELECT, next -> format_select state before next
-  | _, VALUES, _ -> format_values state
-  | _, REFERENCES, _ -> format_references state
-  | before, FROM, _ -> format_from state before
-  | _, WHERE, _ -> format_where state
-  | _, BEGIN, _ -> format_begin state
-  | _, END, _ -> format_end state
-  | _, END_LOOP, _ -> format_end_loop state
-  | _, LOOP, _ -> format_loop state
-  | _, DECLARE, _ -> format_declare state
-  | _, IN, _ -> format_in state
-  
-  (* Clause keywords *)
-  | _, (AND | OR | LEFT | RIGHT | JOIN | RETURNS), next -> 
-      format_clause_keyword state token next
-  
-  (* Inline keywords that should just have spaces *)
-  | _, (ON | NOT | IS | TABLE | IF | EXISTS | PRIMARY | KEY | INDEX | UNIQUE | DEFAULT), _ ->
-      PrintHelpers.print_token_with_space token
-  
-  | before, COMMA, next -> format_comma state before next
-  
-  (* Parentheses *)
-  | _, LEFT_PAREN, Some RIGHT_PAREN -> format_simple_token state token
-  | Some LEFT_PAREN, RIGHT_PAREN, _ -> 
-      format_simple_token state token; printf " "
-  | _, LEFT_PAREN, next -> format_left_paren state next
-  | before, RIGHT_PAREN, next -> format_right_paren state before next
-  
-  (* Punctuation *)
-  | _, SEMICOLON, next -> format_semicolon state next
-  
-  (* Function delimiters *)
-  | before, FUNC_DELIM, _ -> format_func_delim before
-  
-  (* Default case - just print with space *)
-  | _ -> PrintHelpers.print_token_with_space token
-
-(* Parse error handling *)
-let parse_with_error lexbuf =
-  try Some (Lexer.read lexbuf) with
-  | SyntaxError msg ->
-    Printf.eprintf "%s" msg;
-    None
-
-(* Token history management *)
-let take2 = function
-  | a :: b :: _ -> [a; b]
-  | lst -> lst
-
-(* Main parsing loop *)
-let rec parse state lexbuf tokens =
-  let next_token = parse_with_error lexbuf in
-  (* Format current token based on context *)
-  (match tokens with
-   | current :: previous :: _ ->
-     format_token state current (Some previous) next_token
-   | current :: _ ->
-     format_token state current None next_token
-   | _ -> ());
-  (* Continue parsing *)
-  match next_token with
-  | Some EOF ->
-     format_token state EOF None None
-  | Some token ->
-     parse state lexbuf (take2 (token :: tokens))
-  | None -> ()
 
 (* Create initial formatter state *)
 let create_formatter_state () = {
@@ -466,11 +390,122 @@ let create_formatter_state () = {
   references_mode = ref false;
 }
 
+(* Main token formatting dispatch *)
+module MakeFormatter (O : Output) = struct
+  module TokenFormatters = TokenFormatters (O)
+  module PrintHelpers = PrintHelpers (O)
+  
+  let format_token state token before_token after_token =
+    let open TokenFormatters in
+    match before_token, token, after_token with
+    (* Comments *)
+    | _, COMMENT c, next -> format_comment state c next
+    | _, INLINE_COMMENT _, _ -> format_inline_comment state token
+    
+    (* String literals and identifiers *)
+    | _, SSTRING _, _ | _, DSTRING _, _ | _, QUOTED_ID _, _ -> format_string_literal state token
+    | _, COLONS, _ -> format_simple_token state token
+    | _, ID id, next -> format_identifier state id next
+    | _, NULL, next -> format_null state next
+    | _, ARRAY a, _ -> format_array state a
+    | _, PARAMETER p, _ -> format_parameter state p
+    | _, JSON_OP op, _ | _, TEXT_SEARCH_OP op, _ -> format_special_operator state op
+    
+    (* Simple operators *)
+    | _, tok, _ when TokenClassifier.is_simple_operator tok -> format_operator state tok
+    
+    (* Structural keywords *)
+    | before, CREATE, _ -> format_create state before
+    | before, INSERT, _ -> format_insert state before
+    | before, SELECT, next -> format_select state before next
+    | _, VALUES, _ -> format_values state
+    | _, REFERENCES, _ -> format_references state
+    | before, FROM, _ -> format_from state before
+    | _, WHERE, _ -> format_where state
+    | _, BEGIN, _ -> format_begin state
+    | _, END, _ -> format_end state
+    | _, END_LOOP, _ -> format_end_loop state
+    | _, LOOP, _ -> format_loop state
+    | _, DECLARE, _ -> format_declare state
+    | _, IN, _ -> format_in state
+    
+    (* Clause keywords *)
+    | _, (AND | OR | LEFT | RIGHT | JOIN | RETURNS), next -> 
+        format_clause_keyword state token next
+    
+    (* Inline keywords that should just have spaces *)
+    | _, (ON | NOT | IS | TABLE | IF | EXISTS | PRIMARY | KEY | INDEX | UNIQUE | DEFAULT), _ ->
+        PrintHelpers.print_token_with_space token
+    
+    | before, COMMA, next -> format_comma state before next
+    
+    (* Parentheses *)
+    | _, LEFT_PAREN, Some RIGHT_PAREN -> format_simple_token state token
+    | Some LEFT_PAREN, RIGHT_PAREN, _ -> 
+        format_simple_token state token; PrintHelpers.print_string " "
+    | _, LEFT_PAREN, next -> format_left_paren state next
+    | before, RIGHT_PAREN, next -> format_right_paren state before next
+    
+    (* Punctuation *)
+    | _, SEMICOLON, next -> format_semicolon state next
+    
+    (* Function delimiters *)
+    | before, FUNC_DELIM, _ -> format_func_delim before
+    
+    (* Default case - just print with space *)
+    | _ -> PrintHelpers.print_token_with_space token
+
+  (* Parse error handling *)
+  let parse_with_error lexbuf =
+    try Some (Lexer.read lexbuf) with
+    | SyntaxError msg ->
+      Printf.eprintf "%s" msg;
+      None
+
+  (* Token history management *)
+  let take2 = function
+    | a :: b :: _ -> [a; b]
+    | lst -> lst
+
+  (* Main parsing loop *)
+  let rec parse state lexbuf tokens =
+    let next_token = parse_with_error lexbuf in
+    (* Format current token based on context *)
+    (match tokens with
+     | current :: previous :: _ ->
+       format_token state current (Some previous) next_token
+     | current :: _ ->
+       format_token state current None next_token
+     | _ -> ());
+    (* Continue parsing *)
+    match next_token with
+    | Some EOF ->
+       format_token state EOF None None
+    | Some token ->
+       parse state lexbuf (take2 (token :: tokens))
+    | None -> ()
+
+  (* Main format function *)
+  let format lexbuf =
+    let state = create_formatter_state () in
+    Stack.push !(state.indent_stack) !(state.indent_level);
+    parse state lexbuf []
+end
+
+(* Default formatter using PrintOutput *)
+module DefaultFormatter = MakeFormatter (PrintOutput)
+
+(* Parse error handling *)
+let parse_with_error = DefaultFormatter.parse_with_error
+
+(* Token history management *)
+let take2 = DefaultFormatter.take2
+
+(* Main parsing loop *)
+let parse = DefaultFormatter.parse
+
 (* Main format function *)
-let format lexbuf =
-  let state = create_formatter_state () in
-  Stack.push !(state.indent_stack) !(state.indent_level);
-  parse state lexbuf []
+let format = DefaultFormatter.format
 
 (* Public API functions *)
 let format_stdio () =
