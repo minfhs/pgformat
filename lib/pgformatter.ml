@@ -2,10 +2,10 @@ open Core
 
 (* Default formatter using PrintOutput *)
 module DefaultConfig = struct
-  let config = Config.default_config
+  let config = Pgcore.Config.default_config
 end
 
-module DefaultFormatter = Parser.MakeFormatter (Output.PrintOutput) (DefaultConfig)
+module DefaultFormatter = Parser.MakeFormatter (Pgcore.Output.PrintOutput) (DefaultConfig)
 
 (* Main API functions *)
 let format = DefaultFormatter.format
@@ -29,7 +29,7 @@ let format_file filename =
   In_channel.close input
 
 (* Re-export modules for convenience *)
-module Config = Config
-module Output = Output
+module Config = Pgcore.Config
+module Output = Pgcore.Output
 module Error = Error
 module Builder = Builder

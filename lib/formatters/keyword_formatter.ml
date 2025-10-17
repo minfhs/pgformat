@@ -1,11 +1,14 @@
-open Ast
-open Output
-open Config
-open Print_helpers
+open Pgcore.Ast
+
+(* Alias modules for convenience *)
+module Output = Pgcore.Output
+module Config = Pgcore.Config
+module State = Pgcore.State
+module PrintHelpers = Pgcore.Print_helpers
 
 (* Keyword formatting functionality *)
-module KeywordFormatter (O : Output) (Config : sig val config : format_config end) = struct
-  module PrintHelpers = PrintHelpers (O) (Config)
+module KeywordFormatter (O : Output.Output) (Config : sig val config : Config.format_config end) = struct
+  module PrintHelpers = Pgcore.Print_helpers.PrintHelpers (O) (Config)
   open PrintHelpers
   open State.StateHelpers
 

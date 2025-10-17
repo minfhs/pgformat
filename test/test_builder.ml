@@ -1,12 +1,16 @@
 open Core
 
+(* Module aliases for easier access *)
+module Config = Pgcore.Config
+module Output = Pgcore.Output
+
 (* Custom output module that captures to a buffer *)
 let make_buffer_output buffer = 
   let module BufferOutput = struct
     let print_string s = Buffer.add_string buffer s
     let print_newline () = Buffer.add_char buffer '\n'
   end in
-  (module BufferOutput : Pgformat.Output.Output)
+  (module BufferOutput : Output.Output)
 
 (* Helper function to format with custom config and capture output *)
 let format_with_custom_config config sql =
@@ -14,8 +18,8 @@ let format_with_custom_config config sql =
   let output_module = make_buffer_output buffer in
   
   let builder = Pgformat.Builder.FormatterBuilder.create ()
-    |> Pgformat.Builder.FormatterBuilder.with_indent_size config.Pgformat.Config.indent_size
-    |> Pgformat.Builder.FormatterBuilder.with_max_line_length config.Pgformat.Config.max_line_length
+    |> Pgformat.Builder.FormatterBuilder.with_indent_size config.Config.indent_size
+    |> Pgformat.Builder.FormatterBuilder.with_max_line_length config.Config.max_line_length
     |> Pgformat.Builder.FormatterBuilder.with_output output_module in
   
   let temp_file, fd = Core_unix.mkstemp "temp.XXXXXX" in
@@ -40,7 +44,7 @@ let%expect_test "custom_formatter_with_2_space_indent" =
   let sql = "SELECT a,b FROM table_name;" in
   
   (* Create a custom config with 2-space indent *)
-  let config = { Pgformat.Config.default_config with indent_size = 2 } in
+  let config = { Config.default_config with Config.indent_size = 2 } in
   
   let output = format_with_custom_config config sql in
   print_string output;
@@ -56,7 +60,7 @@ let%expect_test "custom_formatter_with_8_space_indent" =
   let sql = "SELECT a,b FROM table_name;" in
   
   (* Create a custom config with 8-space indent *)
-  let config = { Pgformat.Config.default_config with indent_size = 8 } in
+  let config = { Config.default_config with Config.indent_size = 8 } in
   
   let output = format_with_custom_config config sql in
   print_string output;

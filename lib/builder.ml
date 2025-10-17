@@ -1,17 +1,17 @@
-open Config
-open Output
+open Pgcore.Config
+open Pgcore.Output
 open Parser
 
 (* Formatter Builder Pattern for chaining configurations *)
 module FormatterBuilder = struct
   type t = {
-    config: format_config;
-    output: (module Output);
+    config: Pgcore.Config.format_config;
+    output: (module Pgcore.Output.Output);
   }
   
   let create () = { 
-    config = default_config; 
-    output = (module PrintOutput : Output) 
+    config = Pgcore.Config.default_config; 
+    output = (module Pgcore.Output.PrintOutput : Pgcore.Output.Output) 
   }
   
   let with_indent_size size builder = 

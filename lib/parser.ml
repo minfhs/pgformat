@@ -1,14 +1,14 @@
 open Core
-open Ast
-open State
+open Pgcore.Ast
+open Pgcore.State
 
 (* Main token formatting dispatch *)
-module MakeFormatter (O : Output.Output) (Config : sig val config : Config.format_config end) = struct
+module MakeFormatter (O : Pgcore.Output.Output) (Config : sig val config : Pgcore.Config.format_config end) = struct
   (* Import the formatter modules *)
-  module CommentFormatter = Comment_formatter.CommentFormatter (O) (Config)
-  module KeywordFormatter = Keyword_formatter.KeywordFormatter (O) (Config)
-  module LiteralFormatter = Literal_formatter.LiteralFormatter (O) (Config)
-  module PunctuationFormatter = Punctuation_formatter.PunctuationFormatter (O) (Config)
+  module CommentFormatter = Formatters.Comment_formatter.CommentFormatter (O) (Config)
+  module KeywordFormatter = Formatters.Keyword_formatter.KeywordFormatter (O) (Config)
+  module LiteralFormatter = Formatters.Literal_formatter.LiteralFormatter (O) (Config)
+  module PunctuationFormatter = Formatters.Punctuation_formatter.PunctuationFormatter (O) (Config)
 
   (* Helper functions *)
   let print_string s = O.print_string s
@@ -56,11 +56,11 @@ module MakeFormatter (O : Output.Output) (Config : sig val config : Config.forma
     (* JOIN-related keywords using classifier *)
     | LEFT when (Poly.(after_token = Some JOIN)) ->
         KeywordFormatter.format_with_conditional_newline_before state token 0
-    | token when Token_classifier.TokenClassifier.is_join_keyword token ->
+    | token when Pgcore.Token_classifier.TokenClassifier.is_join_keyword token ->
         KeywordFormatter.format_operator state token
     
     (* Clause keywords using classifier *)
-    | token when Token_classifier.TokenClassifier.is_clause_keyword token -> 
+    | token when Pgcore.Token_classifier.TokenClassifier.is_clause_keyword token -> 
         KeywordFormatter.format_with_conditional_newline_before state token 0
     
     (* Punctuation *)
@@ -104,11 +104,11 @@ module MakeFormatter (O : Output.Output) (Config : sig val config : Config.forma
         (* Add space before LANGUAGE when it follows $$ *)
         print_string " ";
         KeywordFormatter.format_operator state token
-    | token when Token_classifier.TokenClassifier.is_simple_operator token -> 
+    | token when Pgcore.Token_classifier.TokenClassifier.is_simple_operator token -> 
         KeywordFormatter.format_operator state token
     
     (* Structural keywords using classifier *)
-    | token when Token_classifier.TokenClassifier.is_structural_keyword token ->
+    | token when Pgcore.Token_classifier.TokenClassifier.is_structural_keyword token ->
         KeywordFormatter.format_with_conditional_newline_before state token 0
     
     (* Other keywords that just need operator formatting *)
@@ -121,8 +121,8 @@ module MakeFormatter (O : Output.Output) (Config : sig val config : Config.forma
 
   (* Parse error handling *)
   let parse_with_error lexbuf =
-    try Ok (Lexer.read lexbuf) with
-    | Ast.SyntaxError msg ->
+    try Ok (Pgcore.Lexer.read lexbuf) with
+    | Pgcore.Ast.SyntaxError msg ->
         Error msg
     | Failure msg when String.is_prefix msg ~prefix:"lexing" ->
         Error msg
@@ -156,7 +156,7 @@ module MakeFormatter (O : Output.Output) (Config : sig val config : Config.forma
 
   (* Main format function *)
   let format lexbuf =
-    let state = State.create_formatter_state () in
+    let state = Pgcore.State.create_formatter_state () in
     Stack.push !(state.indent_stack) !(state.indent_level);
     parse state lexbuf []
 end

@@ -1,11 +1,12 @@
-open Ast
-open Output
-open Config
-open Print_helpers
+open Pgcore.Ast
+
+(* Alias modules for convenience *)
+module Output = Pgcore.Output
+module Config = Pgcore.Config
 
 (* Comment formatting functionality *)
-module CommentFormatter (O : Output) (Config : sig val config : format_config end) = struct
-  module PrintHelpers = PrintHelpers (O) (Config)
+module CommentFormatter (O : Output.Output) (Config : sig val config : Config.format_config end) = struct
+  module PrintHelpers = Pgcore.Print_helpers.PrintHelpers (O) (Config)
   open PrintHelpers
 
   let format_comment _state comment next_token =

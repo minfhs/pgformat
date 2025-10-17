@@ -1,5 +1,8 @@
-open Pgformat
 open Core
+
+(* Module aliases for easier access *)
+module Config = Pgcore.Config
+module Builder = Pgformat.Builder
 
 let format_content ~indent_size_override ~max_line_length_override = function
   | None | Some "-" -> 
@@ -9,8 +12,8 @@ let format_content ~indent_size_override ~max_line_length_override = function
       let config = Config.merge_config_with_overrides base_config 
         ~indent_size:indent_size_override ~max_line_length:max_line_length_override in
       let builder = Builder.FormatterBuilder.create ()
-        |> Builder.FormatterBuilder.with_indent_size config.indent_size
-        |> Builder.FormatterBuilder.with_max_line_length config.max_line_length in
+        |> Builder.FormatterBuilder.with_indent_size config.Config.indent_size
+        |> Builder.FormatterBuilder.with_max_line_length config.Config.max_line_length in
       Builder.FormatterBuilder.format_with_config builder lexbuf
   | Some file -> 
       (* Format from file *)
@@ -20,8 +23,8 @@ let format_content ~indent_size_override ~max_line_length_override = function
         let config = Config.merge_config_with_overrides base_config 
           ~indent_size:indent_size_override ~max_line_length:max_line_length_override in
         let builder = Builder.FormatterBuilder.create ()
-          |> Builder.FormatterBuilder.with_indent_size config.indent_size
-          |> Builder.FormatterBuilder.with_max_line_length config.max_line_length in
+          |> Builder.FormatterBuilder.with_indent_size config.Config.indent_size
+          |> Builder.FormatterBuilder.with_max_line_length config.Config.max_line_length in
         Builder.FormatterBuilder.format_with_config builder lexbuf)
 ;;
 
