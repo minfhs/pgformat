@@ -416,60 +416,83 @@ module MakeFormatter (O : Output) (Config : sig val config : format_config end) 
   
   let format_token state token before_token after_token =
     let open TokenFormatters in
-    match before_token, token, after_token with
+    
+    let format_comment_tokens state token _before_token after_token =
+      match token with
+      | COMMENT c -> format_comment state c after_token
+      | INLINE_COMMENT _ -> format_inline_comment state token
+      | _ -> failwith "Expected comment token"
+    in
+    
+    let format_literal_tokens state token _before_token after_token =
+      match token with
+      | SSTRING _ | DSTRING _ | QUOTED_ID _ -> format_string_literal state token
+      | COLONS -> format_simple_token state token
+      | ID id -> format_identifier state id after_token
+      | NULL -> format_null state after_token
+      | ARRAY a -> format_array state a
+      | PARAMETER p -> format_parameter state p
+      | JSON_OP op | TEXT_SEARCH_OP op -> format_special_operator state op
+      | _ -> failwith "Expected literal token"
+    in
+    
+    let format_structural_keywords state token before_token after_token =
+      match before_token, token, after_token with
+      | before, CREATE, _ -> format_create state before
+      | before, INSERT, _ -> format_insert state before
+      | before, SELECT, next -> format_select state before next
+      | _, VALUES, _ -> format_values state
+      | _, REFERENCES, _ -> format_references state
+      | before, FROM, _ -> format_from state before
+      | _, WHERE, _ -> format_where state
+      | _, BEGIN, _ -> format_begin state
+      | _, END, _ -> format_end state
+      | _, END_LOOP, _ -> format_end_loop state
+      | _, LOOP, _ -> format_loop state
+      | _, DECLARE, _ -> format_declare state
+      | _, IN, _ -> format_in state
+      | _ -> failwith "Expected structural keyword"
+    in
+    
+    let format_punctuation state token before_token after_token =
+      match before_token, token, after_token with
+      | before, COMMA, next -> format_comma state before next
+      | _, LEFT_PAREN, Some RIGHT_PAREN -> format_simple_token state token
+      | Some LEFT_PAREN, RIGHT_PAREN, _ -> 
+          format_simple_token state token; PrintHelpers.print_string " "
+      | _, LEFT_PAREN, next -> format_left_paren state next
+      | before, RIGHT_PAREN, next -> format_right_paren state before next
+      | _, SEMICOLON, next -> format_semicolon state next
+      | before, FUNC_DELIM, _ -> format_func_delim before
+      | _ -> failwith "Expected punctuation token"
+    in
+
+    match token with
     (* Comments *)
-    | _, COMMENT c, next -> format_comment state c next
-    | _, INLINE_COMMENT _, _ -> format_inline_comment state token
+    | COMMENT _ | INLINE_COMMENT _ -> format_comment_tokens state token before_token after_token
     
     (* String literals and identifiers *)
-    | _, SSTRING _, _ | _, DSTRING _, _ | _, QUOTED_ID _, _ -> format_string_literal state token
-    | _, COLONS, _ -> format_simple_token state token
-    | _, ID id, next -> format_identifier state id next
-    | _, NULL, next -> format_null state next
-    | _, ARRAY a, _ -> format_array state a
-    | _, PARAMETER p, _ -> format_parameter state p
-    | _, JSON_OP op, _ | _, TEXT_SEARCH_OP op, _ -> format_special_operator state op
+    | SSTRING _ | DSTRING _ | QUOTED_ID _ | COLONS | ID _ | NULL | ARRAY _ | PARAMETER _ | JSON_OP _ | TEXT_SEARCH_OP _ ->
+        format_literal_tokens state token before_token after_token
     
     (* Simple operators *)
-    | _, tok, _ when TokenClassifier.is_simple_operator tok -> format_operator state tok
+    | tok when TokenClassifier.is_simple_operator tok -> format_operator state tok
     
     (* Structural keywords *)
-    | before, CREATE, _ -> format_create state before
-    | before, INSERT, _ -> format_insert state before
-    | before, SELECT, next -> format_select state before next
-    | _, VALUES, _ -> format_values state
-    | _, REFERENCES, _ -> format_references state
-    | before, FROM, _ -> format_from state before
-    | _, WHERE, _ -> format_where state
-    | _, BEGIN, _ -> format_begin state
-    | _, END, _ -> format_end state
-    | _, END_LOOP, _ -> format_end_loop state
-    | _, LOOP, _ -> format_loop state
-    | _, DECLARE, _ -> format_declare state
-    | _, IN, _ -> format_in state
+    | CREATE | INSERT | SELECT | VALUES | REFERENCES | FROM | WHERE | BEGIN | END | END_LOOP | LOOP | DECLARE | IN ->
+        format_structural_keywords state token before_token after_token
     
     (* Clause keywords *)
-    | _, (AND | OR | LEFT | RIGHT | JOIN | RETURNS), next -> 
-        format_clause_keyword state token next
+    | AND | OR | LEFT | RIGHT | JOIN | RETURNS -> 
+        format_clause_keyword state token after_token
     
     (* Inline keywords that should just have spaces *)
-    | _, (ON | NOT | IS | TABLE | IF | EXISTS | PRIMARY | KEY | INDEX | UNIQUE | DEFAULT), _ ->
+    | ON | NOT | IS | TABLE | IF | EXISTS | PRIMARY | KEY | INDEX | UNIQUE | DEFAULT ->
         PrintHelpers.print_token_with_space token
     
-    | before, COMMA, next -> format_comma state before next
-    
-    (* Parentheses *)
-    | _, LEFT_PAREN, Some RIGHT_PAREN -> format_simple_token state token
-    | Some LEFT_PAREN, RIGHT_PAREN, _ -> 
-        format_simple_token state token; PrintHelpers.print_string " "
-    | _, LEFT_PAREN, next -> format_left_paren state next
-    | before, RIGHT_PAREN, next -> format_right_paren state before next
-    
     (* Punctuation *)
-    | _, SEMICOLON, next -> format_semicolon state next
-    
-    (* Function delimiters *)
-    | before, FUNC_DELIM, _ -> format_func_delim before
+    | COMMA | LEFT_PAREN | RIGHT_PAREN | SEMICOLON | FUNC_DELIM ->
+        format_punctuation state token before_token after_token
     
     (* Default case - just print with space *)
     | _ -> PrintHelpers.print_token_with_space token
