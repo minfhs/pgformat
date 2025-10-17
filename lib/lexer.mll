@@ -1,44 +1,57 @@
 {
 open Lexing
-
 open Ast
+
+(* Keyword lookup function for case-insensitive matching *)
+let keyword_table = Hashtbl.create 50
+
+let () =
+  List.iter (fun (kw, token) -> 
+    Hashtbl.add keyword_table (String.uppercase_ascii kw) token;
+    Hashtbl.add keyword_table (String.lowercase_ascii kw) token;
+    Hashtbl.add keyword_table kw token)
+  [
+    ("BEGIN", BEGIN); ("SELECT", SELECT); ("AS", AS); ("WHERE", WHERE);
+    ("INTO", INTO); ("VALUES", VALUES); ("FROM", FROM); ("INSERT", INSERT);
+    ("CREATE", CREATE); ("LEFT", LEFT); ("AND", AND); ("OR", OR); ("NOT", NOT);
+    ("RETURNS", RETURNS); ("END", END); ("DECLARE", DECLARE); 
+    ("REFERENCES", REFERENCES); ("IN", IN); ("LANGUAGE", LANGUAGE);
+    ("LOOP", LOOP); ("NULL", NULL); ("IF", IF); ("EXISTS", EXISTS);
+    ("TABLE", TABLE); ("PRIMARY", PRIMARY); ("KEY", KEY); ("INDEX", INDEX);
+    ("UNIQUE", UNIQUE); ("DEFAULT", DEFAULT); ("JOIN", JOIN); ("INNER", INNER);
+    ("OUTER", OUTER); ("RIGHT", RIGHT); ("FULL", FULL); ("ON", ON);
+    ("UPDATE", UPDATE); ("SET", SET); ("DELETE", DELETE); ("ALTER", ALTER);
+    ("DROP", DROP); ("TRUNCATE", TRUNCATE); ("ORDER", ORDER); ("BY", BY);
+    ("GROUP", GROUP); ("HAVING", HAVING); ("LIMIT", LIMIT); ("OFFSET", OFFSET);
+    ("DISTINCT", DISTINCT); ("ALL", ALL); ("BETWEEN", BETWEEN); ("LIKE", LIKE);
+    ("ILIKE", ILIKE); ("IS", IS);
+  ]
+
+let lookup_keyword s =
+  try Hashtbl.find keyword_table (String.uppercase_ascii s)
+  with Not_found -> ID s
 }
 
 let white = [' ' '\t']+
 let newline = '\r' | '\n' | "\r\n"
 let digit = ['0'-'9']
-let frac = '.' digit*
+let frac = '.' digit+
 let exp = ['e' 'E'] ['-' '+']? digit+
-let int = '-'? ['0'-'9'] ['0'-'9']*
-let float = '-'? digit* frac? exp?
+let int = '-'? digit+
+let float = '-'? digit+ frac? exp? | '-'? digit* frac exp?
 
-let idparts = ['a'-'z' 'A'-'Z' '_' '.' '$']+
-let id = idparts (digit? idparts?)+
+let idchar = ['a'-'z' 'A'-'Z' '_' '$']
+let id = idchar (idchar | digit | '.' | '#')*
 
-let begin="BEGIN"|"Begin"|"begin"
-let select="SELECT" | "Select" | "select"
-let askw = "AS" | "As" | "as"
-let where = "WHERE" | "Where" | "where"
-let into = "INTO" | "Into" | "into"
-let values = "VALUES" | "Values" | "values"
-let from = "FROM" | "From" | "from"
-let insert = "INSERT" | "Insert" | "insert"
-let create = "CREATE" | "Create" | "create"
-let left = "LEFT" | "Left" | "left"
-let andkw = "AND" | "And" | "and"
-let returns = "RETURNS" | "Returns" | "returns"
-let endkw = "END" | "End" | "end"
-let declare = "DECLARE" | "Declare" | "declare"
-let references = "REFERENCES" | "References" | "references"
-let in = "IN" | "In" | "in"
-let language = "LANGUAGE" | "Language" | "language"
-let loop = "LOOP" | "Loop" | "loop"
-let end = "END" | "End" | "end"
-let null = "NULL" | "Null" | "null"
-let end_loop = end white+ loop 
+(* Simplified keyword patterns - we'll handle case insensitivity in code *)
+let keyword = ['a'-'z' 'A'-'Z']+
+let end_loop = "END" white+ "LOOP" | "end" white+ "loop" | "End" white+ "Loop"
 let func_delim = ['$'] id* ['$']
 let array_lit = ['['] [^ ']']* [']']
 let colons = "::"
+let parameter = '$' digit+
+let json_op = "->" | "->>" | "#>" | "#>>"
+let text_search_op = "@@" | "@@@"
 
 rule read =
   parse
@@ -48,10 +61,16 @@ rule read =
   | "--"     { read_comment (Buffer.create 1024) lexbuf }
   | int      { INT (int_of_string (Lexing.lexeme lexbuf)) }
   | float      { FLOAT (float_of_string (Lexing.lexeme lexbuf)) }
-  | null     { NULL }
   | '\''      { read_sstring (Buffer.create 256) lexbuf }
-  | '"'      { read_dstring (Buffer.create 256) lexbuf }
+  | '"'      { read_quoted_id_or_string (Buffer.create 256) lexbuf }
+  | text_search_op { TEXT_SEARCH_OP (Lexing.lexeme lexbuf) }
+  | json_op { JSON_OP (Lexing.lexeme lexbuf) }
+  | parameter { PARAMETER (Lexing.lexeme lexbuf) }
   | func_delim     { FUNC_DELIM }
+  | ">=" { GTE }
+  | "<=" { LTE }
+  | "<>" { NEQ }
+  | "!=" { NEQ }
   | '>' { GT }
   | '<' { LT }
   | '('      { LEFT_PAREN}
@@ -66,28 +85,12 @@ rule read =
   | ','      { COMMA }
   | '+' { PLUS }
   | '-' { MINUS }
+  | '*' { STAR }
   | ":=" { ASSIGN }
   | "=" { EQ }
-  | begin { BEGIN }
-  | select { SELECT }
-  | from { FROM }
-  | insert { INSERT }
-  | where { WHERE }
-  | into { INTO }
-  | values { VALUES }
-  | askw { AS }
-  | andkw { AND }
-  | create { CREATE }
-  | left { LEFT }
-  | returns { RETURNS }
-  | references { REFERENCES }
-  | end { END }
-  | declare { DECLARE }
-  | in { IN }
-  | language { LANGUAGE }
   | end_loop { END_LOOP }
-  | loop { LOOP }
   | array_lit { ARRAY(Lexing.lexeme lexbuf) }
+  | keyword { lookup_keyword (Lexing.lexeme lexbuf) }
   | id { ID(Lexing.lexeme lexbuf) }
   | _ { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }
   | eof      { EOF }
@@ -101,7 +104,8 @@ and read_sstring buf =
   | '\\' 'n'  { Buffer.add_char buf '\n'; read_sstring buf lexbuf }
   | '\\' 'r'  { Buffer.add_char buf '\r'; read_sstring buf lexbuf }
   | '\\' 't'  { Buffer.add_char buf '\t'; read_sstring buf lexbuf }
-  | "\\'"  { Buffer.add_string buf "\\'"; read_sstring buf lexbuf }
+  | '\'' '\'' { Buffer.add_char buf '\''; read_sstring buf lexbuf }
+  | "\\'"     { Buffer.add_char buf '\''; read_sstring buf lexbuf }
   | [^ '\'']+
     { Buffer.add_string buf (Lexing.lexeme lexbuf);
       read_sstring buf lexbuf
@@ -109,6 +113,31 @@ and read_sstring buf =
   | '\''       { SSTRING (Buffer.contents buf) }
   | _ { raise (SyntaxError ("Illegal string character: " ^ Lexing.lexeme lexbuf)) }
   | eof { raise (SyntaxError ("String is not terminated")) }
+
+and read_quoted_id_or_string buf =
+  parse
+  | '\\' '/'  { Buffer.add_char buf '/'; read_quoted_id_or_string buf lexbuf }
+  | '\\' '\\' { Buffer.add_char buf '\\'; read_quoted_id_or_string buf lexbuf }
+  | '\\' 'b'  { Buffer.add_char buf '\b'; read_quoted_id_or_string buf lexbuf }
+  | '\\' 'f'  { Buffer.add_char buf '\012'; read_quoted_id_or_string buf lexbuf }
+  | '\\' 'n'  { Buffer.add_char buf '\n'; read_quoted_id_or_string buf lexbuf }
+  | '\\' 'r'  { Buffer.add_char buf '\r'; read_quoted_id_or_string buf lexbuf }
+  | '\\' 't'  { Buffer.add_char buf '\t'; read_quoted_id_or_string buf lexbuf }
+  | '"' '"'   { Buffer.add_char buf '"'; read_quoted_id_or_string buf lexbuf }
+  | "\\\""    { Buffer.add_char buf '"'; read_quoted_id_or_string buf lexbuf }
+  | [^ '"']+
+    { Buffer.add_string buf (Lexing.lexeme lexbuf);
+      read_quoted_id_or_string buf lexbuf
+    }
+  | '"'       { 
+      let content = Buffer.contents buf in
+      (* Check if it looks like a string literal (contains spaces, special chars, etc.) *)
+      if String.contains content ' ' || String.contains content ':' || String.contains content '.'
+      then DSTRING content
+      else QUOTED_ID content
+    }
+  | _ { raise (SyntaxError ("Illegal quoted character: " ^ Lexing.lexeme lexbuf)) }
+  | eof { raise (SyntaxError ("Quoted identifier/string is not terminated")) }
 
 and read_dstring buf =
   parse
@@ -119,7 +148,8 @@ and read_dstring buf =
   | '\\' 'n'  { Buffer.add_char buf '\n'; read_dstring buf lexbuf }
   | '\\' 'r'  { Buffer.add_char buf '\r'; read_dstring buf lexbuf }
   | '\\' 't'  { Buffer.add_char buf '\t'; read_dstring buf lexbuf }
-  | "\\\""  { Buffer.add_string buf "\\\""; read_dstring buf lexbuf }
+  | '"' '"'   { Buffer.add_char buf '"'; read_dstring buf lexbuf }
+  | "\\\""    { Buffer.add_char buf '"'; read_dstring buf lexbuf }
   | [^ '"']+
     { Buffer.add_string buf (Lexing.lexeme lexbuf);
       read_dstring buf lexbuf
@@ -135,7 +165,7 @@ and read_multiline_comment buf =
     { Buffer.add_string buf (Lexing.lexeme lexbuf);
       read_multiline_comment buf lexbuf
     }
-  | eof { raise (SyntaxError ("String is not terminated")) }
+  | eof { raise (SyntaxError ("Multiline comment is not terminated")) }
 
 and read_comment buf =
   parse
@@ -144,4 +174,4 @@ and read_comment buf =
     { Buffer.add_string buf (Lexing.lexeme lexbuf);
       read_comment buf lexbuf
     }
-  | eof { raise (SyntaxError ("String is not terminated")) }
+  | eof { INLINE_COMMENT (Buffer.contents buf) }

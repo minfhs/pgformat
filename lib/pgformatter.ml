@@ -1,252 +1,488 @@
 open Core
 open Ast
 
-(*
-   open Lexing
-let _print_position outx lexbuf =
-  let pos = lexbuf.lex_curr_p in
-  fprintf outx "%s:%d:%d" pos.pos_fname pos.pos_lnum (pos.pos_cnum - pos.pos_bol + 1)
-;;*)
+(* Types for formatter state *)
+type formatter_state = {
+  indent_level: int ref;
+  indent_stack: int Stack.t ref;
+  values_mode: bool ref;
+  references_mode: bool ref;
+}
 
+(* Helper functions for printing and indentation *)
+module PrintHelpers = struct
+  let indent_size = 4
+
+  let make_indent level = String.make (indent_size * level) ' '
+
+  let print_newline () = printf "\n"
+
+  let print_token token = printf "%s" (string_of_token token)
+
+  let print_token_with_space token = printf "%s " (string_of_token token)
+
+  let print_indented_token ?(extra_indent = 0) token level =
+    printf "%s%s" (make_indent (level + extra_indent)) (string_of_token token)
+
+  let print_indented_token_with_space ?(extra_indent = 0) token level =
+    printf "%s%s " (make_indent (level + extra_indent)) (string_of_token token)
+
+  let print_newline_token token =
+    printf "\n%s" (string_of_token token)
+
+  let print_current_indent level = printf "%s" (make_indent level)
+end
+
+(* State management functions *)
+module StateHelpers = struct
+  let get_indent_level state = !(state.indent_level)
+
+  let set_indent_level state level = state.indent_level := level
+
+  let increment_indent state = 
+    state.indent_level := !(state.indent_level) + 1
+
+  let decrement_indent state = 
+    state.indent_level := max 0 (!(state.indent_level) - 1)
+
+  let push_indent state =
+    Stack.push !(state.indent_stack) !(state.indent_level)
+
+  let pop_indent state =
+    let level = Option.value ~default:0 (Stack.pop !(state.indent_stack)) in
+    state.indent_level := level
+
+  let enable_values_mode state = state.values_mode := true
+  let disable_values_mode state = state.values_mode := false
+  let is_values_mode state = !(state.values_mode)
+
+  let enable_references_mode state = state.references_mode := true
+  let disable_references_mode state = state.references_mode := false
+  let is_references_mode state = !(state.references_mode)
+end
+
+(* Token classification *)
+module TokenClassifier = struct
+  let is_simple_operator = function
+    | EQ | LT | GT | GTE | LTE | NEQ | INTO | ASSIGN | LANGUAGE
+    | INT _ | FLOAT _ | FUNC_DELIM | AS | PLUS | MINUS | STAR
+    | PARAMETER _ | JSON_OP _ | TEXT_SEARCH_OP _ -> true
+    | _ -> false
+
+  let is_structural_keyword = function
+    | SELECT | FROM | WHERE | CREATE | INSERT | VALUES | BEGIN | END
+    | DECLARE | LOOP | END_LOOP -> true
+    | _ -> false
+
+  let is_join_keyword = function
+    | LEFT | RIGHT | INNER | OUTER | FULL | JOIN | ON -> true
+    | _ -> false
+
+  let is_clause_keyword = function
+    | AND | OR | NOT | RETURNS | COMMA -> true
+    | _ -> false
+
+  let requires_space_after = function
+    | SEMICOLON -> false
+    | _ -> true
+
+  let requires_newline_before = function
+    | SELECT | FROM | WHERE | CREATE | INSERT | BEGIN | END 
+    | DECLARE | AND | OR | LEFT | JOIN -> true
+    | _ -> false
+end
+
+(* Core formatting logic for different token types *)
+module TokenFormatters = struct
+  open PrintHelpers
+  open StateHelpers
+
+  let format_comment _state comment next_token =
+    match next_token with
+    | Some SELECT | Some INSERT -> printf "/*%s*/\n" comment
+    | _ -> printf "/*%s*/" comment
+
+  let format_inline_comment _state _comment =
+    print_token _comment;
+    print_newline ()
+
+  let format_simple_token _state token =
+    print_token token
+
+  let format_string_literal _state token =
+    print_token token
+
+  let format_operator _state token =
+    print_token_with_space token
+
+  let format_array _state array_content =
+    printf "%s" array_content
+
+  let format_parameter _state param =
+    printf "%s" param
+
+  let format_special_operator _state op =
+    printf "%s" op
+
+  let format_identifier state id next_token =
+    let space = 
+      if Poly.(next_token = Some SEMICOLON) || is_values_mode state 
+      then "" 
+      else " " 
+    in
+    printf "%s%s" id space
+
+  let format_null state next_token =
+    let space = 
+      if Poly.(next_token = Some SEMICOLON) || is_values_mode state 
+      then "" 
+      else " " 
+    in
+    print_token NULL;
+    printf "%s" space
+
+  let format_create state before_token =
+    match before_token with
+    | None -> print_token_with_space CREATE
+    | Some (COMMENT _) -> print_indented_token_with_space CREATE (get_indent_level state)
+    | Some _ ->
+        print_newline ();
+        print_indented_token_with_space CREATE (get_indent_level state)
+
+  let format_insert state before_token =
+    match before_token with
+    | None | Some (COMMENT _) -> print_indented_token_with_space INSERT (get_indent_level state)
+    | Some BEGIN ->
+        (* BEGIN already positioned us correctly with indentation, just print INSERT *)
+        print_token_with_space INSERT
+    | Some _ ->
+        print_newline ();
+        print_indented_token_with_space INSERT (get_indent_level state)
+
+  let format_select state before_token next_token =
+    match before_token, next_token with
+    | _, Some LEFT_PAREN -> print_token_with_space SELECT
+    | Some LEFT_PAREN, _ ->
+        print_token_with_space SELECT;
+        if not (is_values_mode state) then (
+          print_newline ();
+          increment_indent state;
+          print_current_indent (get_indent_level state)
+        )
+    | _ ->
+        print_indented_token_with_space SELECT (get_indent_level state);
+        print_newline ();
+        increment_indent state;
+        print_current_indent (get_indent_level state)
+
+  let format_values state =
+    enable_values_mode state;
+    increment_indent state;
+    print_token_with_space VALUES
+
+  let format_references state =
+    enable_references_mode state;
+    print_token_with_space REFERENCES
+
+  let format_from state before_token =
+    if not (is_values_mode state) then (
+      decrement_indent state;
+      (* Don't add extra newline if previous token was an inline comment *)
+      (match before_token with
+       | Some (INLINE_COMMENT _) -> ()
+       | _ -> print_newline ());
+      print_indented_token_with_space FROM (get_indent_level state)
+    ) else (
+      printf " ";
+      print_token_with_space FROM
+    )
+
+  let format_where state =
+    if not (is_values_mode state) then (
+      print_newline ();
+      print_indented_token_with_space WHERE (get_indent_level state);
+      print_newline ();
+      increment_indent state;
+      print_current_indent (get_indent_level state)
+    ) else (
+      printf " ";
+      print_token_with_space WHERE
+    )
+
+  let format_clause_keyword state token next_token =
+    match token with
+    | LEFT when Poly.(next_token = Some JOIN) ->
+        (* LEFT JOIN should stay on same line *)
+        disable_references_mode state;
+        if not (is_values_mode state) then (
+          print_newline ();
+          print_indented_token_with_space token (get_indent_level state)
+        ) else 
+          print_token_with_space token
+    | JOIN when not (is_values_mode state) ->
+        (* JOIN continues the LEFT JOIN on same line *)
+        print_token_with_space token
+    | AND | OR | RETURNS ->
+        disable_references_mode state;
+        if not (is_values_mode state) then (
+          print_newline ();
+          print_indented_token_with_space token (get_indent_level state)
+        ) else 
+          print_token_with_space token
+    | _ -> 
+        print_token_with_space token
+
+  let format_left_paren state next_token =
+    print_token LEFT_PAREN;
+    match next_token with
+    | Some SELECT ->
+        if not (is_values_mode state) then (
+          push_indent state;
+          increment_indent state;
+          print_newline ();
+          print_current_indent (get_indent_level state)
+        )
+    | _ ->
+        if is_references_mode state then
+          printf " "
+        else if (not (is_values_mode state)) && not (is_references_mode state) then (
+          push_indent state;
+          increment_indent state;
+          print_newline ();
+          print_current_indent (get_indent_level state)
+        )
+
+  let format_right_paren state before_token next_token =
+    if (not (is_values_mode state)) && not (is_references_mode state) then (
+      (* Don't add extra newline if previous token was an inline comment *)
+      (match before_token with
+       | Some (INLINE_COMMENT _) -> ()
+       | _ -> print_newline ());
+      pop_indent state;
+      print_indented_token RIGHT_PAREN (get_indent_level state)
+    ) else 
+      print_token RIGHT_PAREN;
+    disable_references_mode state;
+    if not (Poly.(next_token = Some SEMICOLON)) then printf " "
+
+  let format_semicolon state next_token =
+    (* Handle values mode cleanup *)
+    if is_values_mode state then (
+      decrement_indent state;
+      disable_values_mode state
+    );
+    print_token SEMICOLON;
+    match next_token with
+    | Some EOF | None -> 
+        print_newline ()
+    | Some SELECT when (get_indent_level state) <= 1 ->
+        (* Reset indentation for new SELECT statement only at top level *)
+        set_indent_level state 0;
+        print_newline ();
+        print_newline ()
+    | Some (CREATE | INSERT) when (get_indent_level state) <= 1 -> 
+        (* Reset indentation for new top-level statement, let the handler add its newline *)
+        set_indent_level state 0;
+        print_newline ()
+    | Some LANGUAGE ->
+        (* Don't add extra newline after semicolon before LANGUAGE *)
+        printf " "
+    | Some BEGIN ->
+        (* After variable declarations, decrease indent before BEGIN *)
+        (* Don't add newline - BEGIN handler will add its own *)
+        decrement_indent state
+    | Some (ID _) ->
+        (* Variable declaration continues, maintain indentation *)
+        print_newline ();
+        print_current_indent (get_indent_level state)
+    | Some END ->
+        (* Don't add newline - END handler will add its own *)
+        ()
+    | _ -> 
+        print_newline ()
+
+  let format_comma state before_token next_token =
+    match before_token, next_token with
+    | Some RIGHT_PAREN, Some LEFT_PAREN when is_values_mode state ->
+        print_newline ();
+        print_indented_token_with_space COMMA (get_indent_level state)
+    | Some (INLINE_COMMENT _), _ when not (is_values_mode state) ->
+        (* Don't add extra newline after inline comment *)
+        print_indented_token_with_space COMMA (get_indent_level state)
+    | _ ->
+        if not (is_values_mode state) then (
+          print_newline ();
+          print_indented_token_with_space COMMA (get_indent_level state)
+        ) else 
+          print_token_with_space COMMA
+
+  let format_begin state =
+    decrement_indent state;
+    print_newline ();
+    print_indented_token_with_space BEGIN (get_indent_level state);
+    push_indent state;
+    increment_indent state;
+    print_newline ();
+    print_current_indent (get_indent_level state)
+
+  let format_end state =
+    pop_indent state;
+    print_newline ();
+    print_indented_token END (get_indent_level state)
+
+  let format_end_loop state =
+    pop_indent state;
+    print_indented_token ~extra_indent:1 END_LOOP (get_indent_level state)
+
+  let format_loop state =
+    print_newline ();
+    pop_indent state;
+    print_indented_token_with_space LOOP (get_indent_level state);
+    print_newline ();
+    increment_indent state;
+    print_current_indent (get_indent_level state)
+
+  let format_declare state =
+    print_newline ();
+    print_indented_token_with_space DECLARE (get_indent_level state);
+    increment_indent state;
+    print_newline ();
+    print_current_indent (get_indent_level state)
+
+  let format_in state =
+    print_token_with_space IN;
+    push_indent state;
+    increment_indent state;
+    print_newline ()
+
+  let format_func_delim before_token =
+    match before_token with
+    | Some AS -> 
+        print_newline ();
+        print_token FUNC_DELIM
+    | Some LANGUAGE ->
+        printf " ";
+        print_token FUNC_DELIM
+    | _ -> 
+        print_token FUNC_DELIM
+end
+
+(* Main token formatting dispatch *)
+let format_token state token before_token after_token =
+  let open TokenFormatters in
+  match before_token, token, after_token with
+  (* Comments *)
+  | _, COMMENT c, next -> format_comment state c next
+  | _, INLINE_COMMENT _, _ -> format_inline_comment state token
+  
+  (* String literals and identifiers *)
+  | _, SSTRING _, _ | _, DSTRING _, _ | _, QUOTED_ID _, _ -> format_string_literal state token
+  | _, COLONS, _ -> format_simple_token state token
+  | _, ID id, next -> format_identifier state id next
+  | _, NULL, next -> format_null state next
+  | _, ARRAY a, _ -> format_array state a
+  | _, PARAMETER p, _ -> format_parameter state p
+  | _, JSON_OP op, _ | _, TEXT_SEARCH_OP op, _ -> format_special_operator state op
+  
+  (* Simple operators *)
+  | _, tok, _ when TokenClassifier.is_simple_operator tok -> format_operator state tok
+  
+  (* Structural keywords *)
+  | before, CREATE, _ -> format_create state before
+  | before, INSERT, _ -> format_insert state before
+  | before, SELECT, next -> format_select state before next
+  | _, VALUES, _ -> format_values state
+  | _, REFERENCES, _ -> format_references state
+  | before, FROM, _ -> format_from state before
+  | _, WHERE, _ -> format_where state
+  | _, BEGIN, _ -> format_begin state
+  | _, END, _ -> format_end state
+  | _, END_LOOP, _ -> format_end_loop state
+  | _, LOOP, _ -> format_loop state
+  | _, DECLARE, _ -> format_declare state
+  | _, IN, _ -> format_in state
+  
+  (* Clause keywords *)
+  | _, (AND | OR | LEFT | RIGHT | JOIN | RETURNS), next -> 
+      format_clause_keyword state token next
+  
+  (* Inline keywords that should just have spaces *)
+  | _, (ON | NOT | IS | TABLE | IF | EXISTS | PRIMARY | KEY | INDEX | UNIQUE | DEFAULT), _ ->
+      PrintHelpers.print_token_with_space token
+  
+  | before, COMMA, next -> format_comma state before next
+  
+  (* Parentheses *)
+  | _, LEFT_PAREN, Some RIGHT_PAREN -> format_simple_token state token
+  | Some LEFT_PAREN, RIGHT_PAREN, _ -> 
+      format_simple_token state token; printf " "
+  | _, LEFT_PAREN, next -> format_left_paren state next
+  | before, RIGHT_PAREN, next -> format_right_paren state before next
+  
+  (* Punctuation *)
+  | _, SEMICOLON, next -> format_semicolon state next
+  
+  (* Function delimiters *)
+  | before, FUNC_DELIM, _ -> format_func_delim before
+  
+  (* Default case - just print with space *)
+  | _ -> PrintHelpers.print_token_with_space token
+
+(* Parse error handling *)
 let parse_with_error lexbuf =
   try Some (Lexer.read lexbuf) with
   | SyntaxError msg ->
     Printf.eprintf "%s" msg;
     None
-;;
 
-let format_token indent_level indent_stack values_mode references_mode token before after =
-  let indent rel =
-    let ind = !indent_level in
-    let ind = max 0 (ind + rel) in
-    String.make (4 * ind) ' '
-  in
-  let nl () = printf "\n" in
-  let indent_push () = Stack.push !indent_stack !indent_level in
-  let indent_pop () =
-    let ind = Option.value ~default:0 (Stack.pop !indent_stack) in
-    indent_level := ind
-  in
-  let indent_inc () = indent_level := !indent_level + 1 in
-  let indent_dec () = indent_level := max 0 (!indent_level - 1) in
-  let prt_ind_tok_spc ?(ind = 0) tok =
-    printf "%s%s " (indent ind) (string_of_token tok)
-  in
-  let prt_ind_tok ?(ind = 0) tok = printf "%s%s" (indent ind) (string_of_token tok) in
-  let prt_tok_spc tok = printf "%s " (string_of_token tok) in
-  let prt_nltok tok = printf "\n%s" (string_of_token tok) in
-  let prt_tok tok = printf "%s" (string_of_token tok) in
-  let prt_ind () = printf "%s" (indent 0) in
-  match before, token, after with
-  | _, COMMENT c, Some SELECT -> printf "/*%s*/\n" c
-  | _, COMMENT c, Some INSERT -> printf "/*%s*/\n" c
-  | _, COMMENT c, _ -> printf "/*%s*/" c
-  | _, INLINE_COMMENT _, _ ->
-    prt_nltok token;
-    nl ()
-  | _, VALUES, _ ->
-    values_mode := true;
-    indent_inc ();
-    prt_tok_spc token
-  | _, REFERENCES, _ ->
-    references_mode := true;
-    prt_tok_spc token
-  | Some AS, FUNC_DELIM, _ -> prt_nltok token
-  | _, SSTRING _, _ | _, DSTRING _, _ | _, COLONS, _ -> prt_tok token
-  | _, EQ, _
-  | _, LT, _
-  | _, GT, _
-  | _, INTO, _
-  | _, ASSIGN, _
-  | _, LANGUAGE, _
-  | _, INT _, _
-  | _, FLOAT _, _
-  | _, FUNC_DELIM, _
-  | _, AS, _ -> prt_tok_spc token
-  | _, ARRAY a, _ -> printf "%s" a
-  | _, SELECT, Some LEFT_PAREN -> prt_tok_spc token
-  | _, LEFT_PAREN, Some RIGHT_PAREN -> prt_tok token
-  | Some LEFT_PAREN, RIGHT_PAREN, _ -> prt_tok_spc token
-  | _, ID id, next ->
-    let space = if Poly.(next = Some SEMICOLON) || !values_mode then "" else " " in
-    printf "%s%s" id space
-  | _, NULL, next ->
-    let space = if Poly.(next = Some SEMICOLON) || !values_mode then "" else " " in
-    prt_tok token;
-    printf "%s" space
-  | None, CREATE, _ -> prt_tok_spc token
-  | None, INSERT, _ | Some (COMMENT _), INSERT, _ -> prt_ind_tok_spc token
-  | Some _, INSERT, _ | Some _, CREATE, _ ->
-    nl ();
-    prt_ind_tok_spc token
-  | _, SEMICOLON, Some END_LOOP ->
-    prt_tok token;
-    nl ()
-  | Some SEMICOLON, SELECT, _ ->
-    indent_dec ();
-    nl ();
-    prt_ind_tok token;
-    nl ();
-    indent_inc ();
-    prt_ind ()
-  | _, SEMICOLON, _ ->
-    if !values_mode
-    then (
-      indent_dec ();
-      values_mode := false);
-    prt_tok token;
-    nl ();
-    prt_ind ()
-  | Some RIGHT_PAREN, COMMA, Some LEFT_PAREN ->
-    if !values_mode
-    then (
-      nl ();
-      prt_ind_tok_spc token)
-    else prt_tok_spc token
-  | _, AND, _ | _, LEFT, _ | _, RETURNS, _ | _, COMMA, _ ->
-    references_mode := false;
-    if not !values_mode
-    then (
-      nl ();
-      prt_ind_tok_spc token)
-    else prt_tok_spc token
-  | Some LEFT_PAREN, SELECT, _ ->
-    prt_tok_spc token;
-    if not !values_mode
-    then (
-      nl ();
-      indent_inc ();
-      prt_ind ())
-  | _, SELECT, _ ->
-    prt_ind_tok_spc token;
-    nl ();
-    indent_inc ();
-    prt_ind ()
-  | _, LOOP, _ ->
-    nl ();
-    indent_pop ();
-    prt_ind_tok_spc token;
-    nl ();
-    indent_inc ();
-    prt_ind ()
-  | _, DECLARE, _ ->
-    nl ();
-    prt_ind_tok_spc token;
-    indent_inc ();
-    nl ();
-    prt_ind ()
-  | _, IN, _ ->
-    prt_tok_spc token;
-    indent_push ();
-    indent_inc ();
-    nl ()
-  | _, LEFT_PAREN, Some SELECT ->
-    prt_tok token;
-    if not !values_mode
-    then (
-      indent_push ();
-      indent_inc ();
-      nl ();
-      prt_ind ())
-  | _, LEFT_PAREN, _ ->
-    prt_tok token;
-    if !references_mode
-    then printf " "
-    else if (not !values_mode) && not !references_mode
-    then (
-      indent_push ();
-      indent_inc ();
-      nl ();
-      prt_ind ())
-  | _, RIGHT_PAREN, next ->
-    if (not !values_mode) && not !references_mode
-    then (
-      nl ();
-      indent_pop ();
-      prt_ind_tok token)
-    else prt_tok token;
-    references_mode := false;
-    if Poly.(next = Some SEMICOLON) then () else printf "%s" " "
-  | _, END_LOOP, _ ->
-    indent_pop ();
-    prt_ind_tok ~ind:1 token
-  | _, END, _ ->
-    indent_pop ();
-    nl ();
-    prt_ind_tok token
-  | _, BEGIN, _ ->
-    indent_dec ();
-    nl ();
-    prt_ind_tok_spc token;
-    indent_push ();
-    indent_inc ();
-    nl ();
-    prt_ind ()
-  | _, FROM, _ ->
-    if not !values_mode
-    then (
-      indent_dec ();
-      nl ();
-      prt_ind_tok_spc token)
-    else (
-      printf " ";
-      prt_tok_spc token)
-  | _, WHERE, _ ->
-    if not !values_mode
-    then (
-      nl ();
-      prt_ind_tok_spc token;
-      nl ();
-      indent_inc ();
-      prt_ind ())
-    else (
-      printf " ";
-      prt_tok_spc token)
-  | _, _, _ -> ()
-;;
-
+(* Token history management *)
 let take2 = function
-  | a :: b :: _ -> [ a; b ]
+  | a :: b :: _ -> [a; b]
   | lst -> lst
-;;
 
-let rec parse indent stack values_mode references_mode lexbuf tokens =
-  let nxt_tok = parse_with_error lexbuf in
+(* Main parsing loop *)
+let rec parse state lexbuf tokens =
+  let next_token = parse_with_error lexbuf in
+  (* Format current token based on context *)
   (match tokens with
-   | cur_tok :: prv_tok :: _ ->
-     format_token indent stack values_mode references_mode cur_tok (Some prv_tok) nxt_tok
-   | cur_tok :: _ ->
-     format_token indent stack values_mode references_mode cur_tok None nxt_tok
-   | _ -> ( (*keep parsing*) ));
-  match nxt_tok with
+   | current :: previous :: _ ->
+     format_token state current (Some previous) next_token
+   | current :: _ ->
+     format_token state current None next_token
+   | _ -> ());
+  (* Continue parsing *)
+  match next_token with
   | Some EOF ->
-    (*purge parser*) format_token indent stack values_mode references_mode EOF None None
-  | Some tok ->
-    parse indent stack values_mode references_mode lexbuf (take2 (tok :: tokens))
+     format_token state EOF None None
+  | Some token ->
+     parse state lexbuf (take2 (token :: tokens))
   | None -> ()
-;;
 
+(* Create initial formatter state *)
+let create_formatter_state () = {
+  indent_level = ref 0;
+  indent_stack = ref (Stack.create ());
+  values_mode = ref false;
+  references_mode = ref false;
+}
+
+(* Main format function *)
 let format lexbuf =
-  let stack = ref (Stack.create ()) in
-  let indent = ref 0 in
-  let values_mode = ref false in
-  let references_mode = ref false in
-  let _ = Stack.push !stack !indent in
-  parse indent stack values_mode references_mode lexbuf []
-;;
+  let state = create_formatter_state () in
+  Stack.push !(state.indent_stack) !(state.indent_level);
+  parse state lexbuf []
 
+(* Public API functions *)
 let format_stdio () =
-  let inx = In_channel.stdin in
-  let lexbuf = Lexing.from_channel inx in
+  let input = In_channel.stdin in
+  let lexbuf = Lexing.from_channel input in
   lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = "STDIN" };
-  let _ = format lexbuf in
-  In_channel.close inx
-;;
+  format lexbuf;
+  In_channel.close input
 
 let format_file filename =
-  let inx = In_channel.create filename in
-  let lexbuf = Lexing.from_channel inx in
+  let input = In_channel.create filename in
+  let lexbuf = Lexing.from_channel input in
   lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = filename };
-  let _ = format lexbuf in
-  In_channel.close inx
-;;
+  format lexbuf;
+  In_channel.close input

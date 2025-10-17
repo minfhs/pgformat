@@ -8,9 +8,9 @@ This
 is a
 comment
 */
-SELECT a,b
--- testing
-FROM x as y;|};
+SELECT a,b -- testing
+FROM x
+as y;|};
   [%expect
     {|
     /*
@@ -20,9 +20,17 @@ FROM x as y;|};
     */
     SELECT
         a
-        , b
-    --  testing
+        , b -- testing
+    FROM x AS y;
+    |}]
+;;
 
+let%expect_test "Simple SELECT star" =
+  format_script "SELECT * FROM x as y;";
+  [%expect
+    {|
+    SELECT
+        *
     FROM x AS y;
     |}]
 ;;
@@ -42,16 +50,16 @@ let%expect_test "Simple CREATE" =
   format_script
     {|
     CREATE TABLE IF NOT EXISTS semesters
-    ( id       INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY
-    , title    TEXT    NOT NULL
+    ( id       INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY -- some comment on id
+    , title    TEXT    NOT NULL -- some comment on title
     );
 
     CREATE INDEX ON semesters(id, title);|};
   [%expect
     {|
     CREATE TABLE IF NOT EXISTS semesters (
-        id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY
-        , title TEXT NOT NULL
+        id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY -- some comment on id
+        , title TEXT NOT NULL -- some comment on title
     );
 
     CREATE INDEX ON semesters (
@@ -102,7 +110,8 @@ let%expect_test "Advanced Funct Seed" =
     CREATE FUNCTION seed_optional_for(
         user_email TEXT
     )
-    RETURNS void AS $$
+    RETURNS void AS
+    $$
     DECLARE
         u_id integer;
         r_id integer;
@@ -151,13 +160,11 @@ let%expect_test "Advanced Funct Seed" =
     CREATE FUNCTION seed_optional_for (
         user_email TEXT
     )
-    RETURNS void AS
-    $$
+    RETURNS void AS $$
     DECLARE
         u_id integer;
         r_id integer;
         s record;
-
     BEGIN
         u_id := (
             SELECT
@@ -197,7 +204,6 @@ let%expect_test "Advanced Funct Seed" =
                 , room_id
             ) VALUES (u_id, r_id);
         END LOOP;
-
     END;
     $$ LANGUAGE plpgsql;
     |}]
@@ -268,7 +274,8 @@ let%expect_test "REFERENCES mode" =
     id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY 
     , room_id INTEGER NOT NULL REFERENCES rooms ( id  ) 
     , created_at TIMESTAMPTZ NOT NULL DEFAULT NOW ()  ); |};
-  [%expect {|
+  [%expect
+    {|
     CREATE TABLE IF NOT EXISTS room_events (
         id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY
         , room_id INTEGER NOT NULL REFERENCES rooms ( id )
@@ -286,7 +293,8 @@ INSERT INTO room_events ( room_id , creator_id , title )
 VALUES (( SELECT id FROM rooms WHERE abbr= room_abbr)
           , ( SELECT id FROM users WHERE email= user_email)
           , title);
-END; $$ LANGUAGE plpgsql;
+END; 
+$$ LANGUAGE plpgsql;
 SELECT seed_room_event ( 'ALL' , 'admin@admin.com' , 'Event Alle' );
 SELECT seed_room_event ( 'CG' , 'admin@admin.com' , 'Event CG' );
 SELECT seed_room_event ( 'RM' , 'admin@admin.com' , 'Event RM' );|};
@@ -297,17 +305,14 @@ SELECT seed_room_event ( 'RM' , 'admin@admin.com' , 'Event RM' );|};
         , user_email TEXT
         , title TEXT
     )
-    RETURNS void AS
-    $$
+    RETURNS void AS $$
     BEGIN
-
         INSERT INTO room_events (
             room_id
             , creator_id
             , title
         ) VALUES ((SELECT id FROM rooms WHERE abbr= room_abbr)
             , (SELECT id FROM users WHERE email= user_email) , title);
-
     END;
     $$ LANGUAGE plpgsql;
 
