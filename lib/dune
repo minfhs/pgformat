@@ -3,4 +3,4 @@
 (library
  (name pgformat)
  (libraries core str)
- (modules pgformatter lexer ast))
+ (modules pgformatter lexer ast error config output state token_classifier print_helpers parser builder comment_formatter keyword_formatter literal_formatter punctuation_formatter))
