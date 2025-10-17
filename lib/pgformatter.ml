@@ -127,6 +127,29 @@ module TokenFormatters (O : Output) (Config : sig val config : format_config end
   open PrintHelpers
   open StateHelpers
 
+  (* Common helper functions to reduce duplication *)
+  let format_with_conditional_space state token next_token =
+    let space = 
+      if Poly.(next_token = Some SEMICOLON) || is_values_mode state 
+      then "" 
+      else " " 
+    in
+    print_string ((string_of_token token) ^ space)
+
+  let format_with_conditional_newline_before state token indent_adjustment =
+    if not (is_values_mode state) then (
+      print_newline ();
+      let adjusted_level = max 0 ((get_indent_level state) + indent_adjustment) in
+      print_indented_token_with_space token adjusted_level
+    ) else 
+      print_token_with_space token
+
+  let format_structural_keyword_with_indent state token =
+    print_indented_token_with_space token (get_indent_level state);
+    print_newline ();
+    increment_indent state;
+    print_current_indent (get_indent_level state)
+
   let format_comment _state comment next_token =
     match next_token with
     | Some SELECT | Some INSERT -> print_string ("/*" ^ comment ^ "*/"); print_newline ()
@@ -155,21 +178,10 @@ module TokenFormatters (O : Output) (Config : sig val config : format_config end
     print_string op
 
   let format_identifier state id next_token =
-    let space = 
-      if Poly.(next_token = Some SEMICOLON) || is_values_mode state 
-      then "" 
-      else " " 
-    in
-    print_string (id ^ space)
+    format_with_conditional_space state (ID id) next_token
 
   let format_null state next_token =
-    let space = 
-      if Poly.(next_token = Some SEMICOLON) || is_values_mode state 
-      then "" 
-      else " " 
-    in
-    print_token NULL;
-    print_string space
+    format_with_conditional_space state NULL next_token
 
   let format_create state before_token =
     match before_token with
@@ -244,21 +256,13 @@ module TokenFormatters (O : Output) (Config : sig val config : format_config end
     | LEFT when Poly.(next_token = Some JOIN) ->
         (* LEFT JOIN should stay on same line *)
         disable_references_mode state;
-        if not (is_values_mode state) then (
-          print_newline ();
-          print_indented_token_with_space token (get_indent_level state)
-        ) else 
-          print_token_with_space token
+        format_with_conditional_newline_before state token 0
     | JOIN when not (is_values_mode state) ->
         (* JOIN continues the LEFT JOIN on same line *)
         print_token_with_space token
     | AND | OR | RETURNS ->
         disable_references_mode state;
-        if not (is_values_mode state) then (
-          print_newline ();
-          print_indented_token_with_space token (get_indent_level state)
-        ) else 
-          print_token_with_space token
+        format_with_conditional_newline_before state token 0
     | _ -> 
         print_token_with_space token
 
