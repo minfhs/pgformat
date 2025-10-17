@@ -1,6 +1,21 @@
 open Core
 open Ast
 
+(* Configuration for formatting rules *)
+type format_config = {
+  indent_size: int;
+  max_line_length: int;
+  newline_after_semicolon: bool;
+  space_after_comma: bool;
+}
+
+let default_config = {
+  indent_size = 4;
+  max_line_length = 120;
+  newline_after_semicolon = true;
+  space_after_comma = true;
+}
+
 (* Output interface for formatting *)
 module type Output = sig
   val print_string : string -> unit
@@ -21,8 +36,8 @@ type formatter_state = {
 }
 
 (* Helper functions for printing and indentation *)
-module PrintHelpers (O : Output) = struct
-  let indent_size = 4
+module PrintHelpers (O : Output) (Config : sig val config : format_config end) = struct
+  let indent_size = Config.config.indent_size
 
   let make_indent level = String.make (indent_size * level) ' '
 
@@ -107,8 +122,8 @@ module TokenClassifier = struct
 end
 
 (* Core formatting logic for different token types *)
-module TokenFormatters (O : Output) = struct
-  module PrintHelpers = PrintHelpers (O)
+module TokenFormatters (O : Output) (Config : sig val config : format_config end) = struct
+  module PrintHelpers = PrintHelpers (O) (Config)
   open PrintHelpers
   open StateHelpers
 
@@ -391,9 +406,9 @@ let create_formatter_state () = {
 }
 
 (* Main token formatting dispatch *)
-module MakeFormatter (O : Output) = struct
-  module TokenFormatters = TokenFormatters (O)
-  module PrintHelpers = PrintHelpers (O)
+module MakeFormatter (O : Output) (Config : sig val config : format_config end) = struct
+  module TokenFormatters = TokenFormatters (O) (Config)
+  module PrintHelpers = PrintHelpers (O) (Config)
   
   let format_token state token before_token after_token =
     let open TokenFormatters in
@@ -493,7 +508,11 @@ module MakeFormatter (O : Output) = struct
 end
 
 (* Default formatter using PrintOutput *)
-module DefaultFormatter = MakeFormatter (PrintOutput)
+module DefaultConfig = struct
+  let config = default_config
+end
+
+module DefaultFormatter = MakeFormatter (PrintOutput) (DefaultConfig)
 
 (* Parse error handling *)
 let parse_with_error = DefaultFormatter.parse_with_error
