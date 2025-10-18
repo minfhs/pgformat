@@ -1,0 +1,12 @@
+# pgformat configuration file
+# This file can contain formatting settings for your project
+
+# Indentation settings
+indent-size = 2
+
+# Line length settings  
+max-line-length = 100
+
+# Boolean settings (true/false, yes/no, 1/0)
+newline-after-semicolon = true
+space-after-comma = true

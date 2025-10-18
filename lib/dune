@@ -1,6 +1,4 @@
-(ocamllex lexer)
-
 (library
  (name pgformat)
- (libraries core str)
- (modules pgformatter lexer ast))
+ (libraries core str pgcore formatters)
+ (modules pgformatter parser builder error))

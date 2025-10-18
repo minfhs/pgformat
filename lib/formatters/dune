@@ -1,0 +1,4 @@
+(library
+ (name formatters)
+ (libraries core pgcore)
+ (modules comment_formatter keyword_formatter literal_formatter punctuation_formatter))

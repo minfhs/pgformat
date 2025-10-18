@@ -1,0 +1,6 @@
+(ocamllex lexer)
+
+(library
+ (name pgcore)
+ (libraries core)
+ (modules ast lexer config state token_classifier output print_helpers))
